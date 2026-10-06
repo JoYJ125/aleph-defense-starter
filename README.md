@@ -22,14 +22,14 @@
 
 ## 메모 노출 확인
 
-현재 배포와 저장소의 검색 결과만 기록합니다. Git 이력 재작성은 이미 내려받은 clone/fork, GitHub 캐시, 기존 Vercel 배포를 자동으로 삭제하지 않습니다. 과거 노출이 완전히 해소됐다고 간주하지 않습니다.
+현재 배포와 저장소의 검색 결과만 기록합니다. Git 이력 재작성은 이미 내려받은 clone/fork와 GitHub 캐시를 회수하지 않습니다. 기존 Vercel 배포는 별도로 삭제했지만, Vercel의 최근 삭제 보존이나 외부 사본까지 물리적으로 제거됐다고 단정하지 않습니다.
 
 ### 현재 확인 기록 (2026-10-06)
 
-- Production 커밋 `8300e2a`: `/data.json`은 `200`이고 메모 0건, `/api/learning-memos`는 `200`이고 반환 0건입니다.
+- Production 커밋 `6dfac2c`: `/`, `/data.json`, `/aleph.json`, `/api/learning-memos`는 모두 `200`입니다. 정적 메모와 API 반환은 0건이며 `SAMPLE_NOTE_1`은 정적 응답에 없습니다. 첫 화면 응답에는 `X-Content-Type-Options: nosniff`가 붙고, 화면은 빈 상태 안내를 표시합니다.
 - Supabase `learning_memos`는 0행입니다. `owner_id`는 UUID, RLS는 활성화되어 있고 anon·authenticated 읽기는 거부됩니다.
-- GitHub `main` 이력을 재작성했습니다. 최신 전체 이력에서 메모 본문 검색 0건입니다. 과거 커밋의 두 JSON 경로는 직접 확인 시 `200`이었지만 본문 검색 0건이었습니다.
-- 이전 Vercel 배포는 삭제하지 못했습니다. Vercel 대시보드가 로그인을 요구했고 이 환경에는 Vercel CLI가 없습니다. 기존 배포 URL은 Vercel **Deployments**에서 별도로 삭제해야 합니다.
+- GitHub `main` 이력을 재작성해 최신 커밋은 `6dfac2c`입니다. 최신 도달 가능 이력에서 메모 본문 검색은 0건입니다.
+- Vercel에서 과거 배포 `8a09274`, `1203cc6`, `c9df70c`, `669d3bb`, `8300e2a`와 PR #3 배포를 삭제했고 현재 `6dfac2c`만 배포 목록에 남아 있습니다.
 - 이전 clone/fork 및 GitHub 캐시는 제어할 수 없습니다. 이 조치만으로 과거 노출이 완전히 해소됐다고 단정하지 않습니다.
 
 ## 다음 단계의 코딩 도구에 전달할 규칙
