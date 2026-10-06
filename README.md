@@ -26,24 +26,22 @@
 
 ### 반복 절차
 
-1. Vercel의 **Deployments**에서 현재 Production 배포와 소스 커밋 SHA를 확인합니다. SQL seed에서 검색어를 UTF-8로 가져와 해당 배포 커밋의 정적 입력 파일을 검색하고, 일치 건수만 출력합니다.
+1. Vercel의 **Deployments**에서 현재 Production 배포와 소스 커밋 SHA를 확인합니다. 공개 API 응답에서 검색어를 메모리로 가져와 해당 배포 커밋의 정적 입력 파일을 검색합니다. 검색어와 응답 본문은 출력하지 않습니다.
 
    ```powershell
    git fetch origin main
    $deploySha = '<Production 배포의 소스 커밋 SHA>'
-   $seedPath = 'supabase/migrations/20261006070608_private_learning_memos.sql'
-   git diff --quiet origin/main -- $seedPath
-   if ($LASTEXITCODE -ne 0) { throw 'Local seed file differs from origin/main.' }
-   $seed = Get-Content $seedPath -Raw -Encoding UTF8
-   $phrases = [regex]::Matches($seed, "'([^']*실습용 가상[^']*)'") | ForEach-Object { $_.Groups[1].Value }
-   if ($phrases.Count -ne 4) { throw 'Could not read all four search terms from the seed.' }
+   $production = 'https://<현재 Production 도메인>'
+   $apiResponse = Invoke-WebRequest -Uri ($production + '/api/learning-memos') -UseBasicParsing
+   $apiRows = ConvertFrom-Json -InputObject $apiResponse.Content
+   $phrases = @($apiRows | ForEach-Object { $_.content })
+   if ($phrases.Count -ne 4) { throw 'Could not read all four search terms from the API response.' }
    git grep -c -F -e $phrases[0] -e $phrases[1] -e $phrases[2] -e $phrases[3] $deploySha -- public
    ```
 
 2. 현재 Production의 정적 응답도 검색하고 `/data.json`의 `notes` 개수를 기록합니다.
 
    ```powershell
-   $production = 'https://<현재 Production 도메인>'
    $paths = @('/', '/aleph.json') + @(git ls-tree -r --name-only $deploySha -- public | ForEach-Object { '/' + $_.Substring(7) })
    foreach ($path in ($paths | Sort-Object -Unique)) {
      $body = (Invoke-WebRequest -Uri ($production + $path) -UseBasicParsing).Content
@@ -80,10 +78,9 @@
 
 ### 현재 확인 기록 (2026-10-06)
 
-- 배포 `https://aleph-defense-starter-taupe.vercel.app`: `/`와 `/data.json`에서 네 메모 문장 일치 없음. `/data.json`의 `notes`는 0건입니다.
-- 배포 공개 API: `/api/learning-memos`는 `404`였습니다. 현재 배포에는 로컬 작업 중인 함수가 아직 포함되지 않은 상태입니다.
-- GitHub `main` 커밋 `1203cc6`: 전체 검색에서 네 문장이 각각 `supabase/migrations/20261006070608_private_learning_memos.sql`에 일치합니다. 최신 `data.json`과 `public/data.json`에는 메모가 없습니다. SQL seed 파일은 공개 저장소에서 읽을 수 있습니다.
-- 과거 공개 커밋과 과거 배포는 남아 있습니다. 위 결과는 현재 배포와 최신 트리만 대상으로 하며, 과거 노출 해결이나 삭제를 뜻하지 않습니다.
+- Production 커밋 `669d3bb`: `/`와 `/api/learning-memos`가 `200`, API가 메모 네 건을 반환합니다. `/data.json`은 `200`이며 `notes` 0건입니다. 첫 화면 응답에는 `X-Content-Type-Options: nosniff`가 붙습니다.
+- 최신 GitHub 트리의 정적 파일과 tracked source에서 메모 본문 문장이 검색되지 않습니다. 현재 Supabase 데이터는 유지되며, tracked migration은 테이블과 접근 정책만 준비합니다. 새 DB에는 이 파일만으로 메모 seed가 자동 생성되지 않습니다.
+- 이전 공개 커밋 `1203cc6`와 과거 배포는 남아 있을 수 있습니다. 최신 트리의 검색 결과는 과거 노출 해결이나 이전 배포 삭제를 뜻하지 않습니다.
 
 ## 다음 단계의 코딩 도구에 전달할 규칙
 

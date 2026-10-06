@@ -17,21 +17,6 @@ ON public.learning_memos;
 REVOKE ALL PRIVILEGES ON TABLE public.learning_memos
 FROM PUBLIC, anon, authenticated;
 
-INSERT INTO public.learning_memos (title, content)
-SELECT source.title, source.content
-FROM (VALUES
-  ('과제', '[removed]'),
-  ('포트폴리오', '[removed]'),
-  ('아침 리추얼', '[removed]'),
-  ('훈련 행정 자료', '[removed]')
-) AS source(title, content)
-WHERE NOT EXISTS (
-  SELECT 1
-  FROM public.learning_memos AS existing
-  WHERE existing.title = source.title
-    AND existing.content = source.content
-);
-
 SELECT
   EXISTS (
     SELECT 1
