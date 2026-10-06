@@ -8,7 +8,9 @@
 2. 방어전 1단계 카드의 **Deploy** 버튼을 누릅니다. Vercel에 GitHub로 로그인하고, 새 저장소가 **본인 계정의 Public 저장소**인지 확인한 뒤 Deploy를 누릅니다.
 3. 배포가 끝나면 화면에 나온 `https://…vercel.app` 주소를 방어전 1단계 카드에 붙여넣고 제출합니다. 저장소 주소나 설정 파일은 적지 않습니다.
 
-배포가 끝나면 `/`에서 점령된 가상 자료실을 볼 수 있습니다. `/data.json`에는 같은 가상 메모가 공개됩니다. 이 공개 상태를 확인하는 것이 1단계의 출발점입니다. 1단계 접수와 심판 판정은 포털에서 확인합니다.
+배포가 끝나면 `/`에서 Vercel 함수 `/api/learning-memos`를 통해 Supabase `learning_memos` 테이블의 가상 메모 네 건을 봅니다. 함수는 Vercel 환경변수 `SUPABASE_URL`과 서버 전용 `SUPABASE_SECRET_KEY`를 사용하며, 비밀 키는 브라우저·응답·로그로 보내지 않습니다. Supabase 공개 키를 이용한 직접 읽기 요청은 허용되지 않습니다.
+
+주의: `/api/learning-memos`는 로그인이나 권한 검사가 없는 공개 주소입니다. 누구나 이 주소를 직접 호출해 메모 네 건을 받을 수 있으므로, 서버 키를 숨겨도 메모 접근 자체가 보호되는 것은 아닙니다. 이 공개 함수 주소의 약점과 공개 키 직접 요청 거부는 심판이 별도로 확인합니다.
 
 ## 시작 틀의 자동 처리
 
@@ -16,10 +18,75 @@
 
 `aleph.config.json`의 `repoUrl`과 `publicAppUrl`은 이전 제출 묶음 방식의 자리표시자입니다. 1단계에서는 학생이 편집하지 않습니다. 2단계 이후 코딩 도구가 필요한 설정과 보호 기능을 단계별로 작성합니다. `npm run bundle`과 `bundle-notes.json`도 1단계의 세 걸음에는 포함되지 않습니다.
 
-로컬에서 가상 화면만 확인할 때는 `npm run build -- --local`을 사용합니다. 로컬 실행은 Vercel 배포나 심판 접수를 증명하지 않습니다. 저장소의 `src/attack-check.mjs`는 실제 배포가 된 뒤 `/data.json`을 비로그인으로 요청해 공개 가상 메모의 확인 표시를 읽습니다.
+로컬에서 정적 파일만 빌드할 때는 `npm run build -- --local`을 사용합니다. Vercel API 함수 실행과 화면의 메모 네 건 확인에는 Vercel 배포 및 `SUPABASE_URL`, `SUPABASE_SECRET_KEY` 환경변수가 필요합니다. 로컬 빌드는 배포나 심판 접수를 증명하지 않습니다.
+
+## 메모 노출 확인
+
+현재 배포와 저장소 최신 트리만 확인하며, 과거 공개 커밋이나 과거 Vercel 배포가 삭제·비공개화된 것으로 간주하지 않습니다. 따라서 현재 검색에 일치 항목이 없더라도 과거 노출이 해소됐다고 기록하지 않습니다.
+
+### 반복 절차
+
+1. Vercel의 **Deployments**에서 현재 Production 배포와 소스 커밋 SHA를 확인합니다. SQL seed에서 검색어를 UTF-8로 가져와 해당 배포 커밋의 정적 입력 파일을 검색하고, 일치 건수만 출력합니다.
+
+   ```powershell
+   git fetch origin main
+   $deploySha = '<Production 배포의 소스 커밋 SHA>'
+   $seedPath = 'supabase/migrations/20261006070608_private_learning_memos.sql'
+   git diff --quiet origin/main -- $seedPath
+   if ($LASTEXITCODE -ne 0) { throw 'Local seed file differs from origin/main.' }
+   $seed = Get-Content $seedPath -Raw -Encoding UTF8
+   $phrases = [regex]::Matches($seed, "'([^']*실습용 가상[^']*)'") | ForEach-Object { $_.Groups[1].Value }
+   if ($phrases.Count -ne 4) { throw 'Could not read all four search terms from the seed.' }
+   git grep -c -F -e $phrases[0] -e $phrases[1] -e $phrases[2] -e $phrases[3] $deploySha -- public
+   ```
+
+2. 현재 Production의 정적 응답도 검색하고 `/data.json`의 `notes` 개수를 기록합니다.
+
+   ```powershell
+   $production = 'https://<현재 Production 도메인>'
+   $paths = @('/', '/aleph.json') + @(git ls-tree -r --name-only $deploySha -- public | ForEach-Object { '/' + $_.Substring(7) })
+   foreach ($path in ($paths | Sort-Object -Unique)) {
+     $body = (Invoke-WebRequest -Uri ($production + $path) -UseBasicParsing).Content
+     $hits = @($phrases | Where-Object { $body.Contains($_) })
+     if ($hits.Count -eq 0) { "$path : 0 hits" } else { "$path : $($hits.Count) hits" }
+   }
+   $data = Invoke-RestMethod -Uri ($production + '/data.json')
+   "/data.json notes: $($data.notes.Count)"
+   ```
+
+3. GitHub 최신 `main` 전체 파일을 같은 검색어로 확인하고, 결과 경로와 건수를 기록합니다.
+
+   ```powershell
+   $gitArgs = @('grep', '-c', '-F')
+   foreach ($phrase in $phrases) { $gitArgs += @('-e', $phrase) }
+   $gitArgs += @('origin/main', '--', '.')
+   & git @gitArgs
+   ```
+
+4. 공개 API는 문장 검색과 별도로 HTTP 상태와 반환 건수를 기록합니다. 아래 요청은 응답 본문을 출력하지 않습니다.
+
+   ```powershell
+   try {
+     $apiResponse = Invoke-WebRequest -Uri ($production + '/api/learning-memos') -UseBasicParsing
+     $rows = @($apiResponse.Content | ConvertFrom-Json)
+     "API: HTTP $([int]$apiResponse.StatusCode), rows=$($rows.Count)"
+   } catch {
+     $status = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 'request failed' }
+     "API: HTTP $status"
+   }
+   ```
+
+   이 주소에는 로그인·권한 검사가 없으므로, 배포되면 누구나 메모 네 건을 요청할 수 있습니다. 서버 전용 키를 숨기는 것만으로 이 공개 접근 약점은 해소되지 않습니다.
+
+### 현재 확인 기록 (2026-10-06)
+
+- 배포 `https://aleph-defense-starter-taupe.vercel.app`: `/`와 `/data.json`에서 네 메모 문장 일치 없음. `/data.json`의 `notes`는 0건입니다.
+- 배포 공개 API: `/api/learning-memos`는 `404`였습니다. 현재 배포에는 로컬 작업 중인 함수가 아직 포함되지 않은 상태입니다.
+- GitHub `main` 커밋 `1203cc6`: 전체 검색에서 네 문장이 각각 `supabase/migrations/20261006070608_private_learning_memos.sql`에 일치합니다. 최신 `data.json`과 `public/data.json`에는 메모가 없습니다. SQL seed 파일은 공개 저장소에서 읽을 수 있습니다.
+- 과거 공개 커밋과 과거 배포는 남아 있습니다. 위 결과는 현재 배포와 최신 트리만 대상으로 하며, 과거 노출 해결이나 삭제를 뜻하지 않습니다.
 
 ## 다음 단계의 코딩 도구에 전달할 규칙
 
-[AGENTS.md](AGENTS.md)를 먼저 읽히고 한 번에 한 제작 단위만 요청하세요. 2단계부터는 자료 보호를 구현할 때 `public/data.json`을 복사하는 1단계 빌드 흐름도 함께 바꿔야 합니다. 3단계 이후의 로그인, 허용 경로, 5단계의 원본 API 주소, 6단계 이후 정책 규칙은 해당 단계 원고와 계약에 맞춰 추가합니다. 비밀번호·토큰·서버 전용 키·실제 학생 기록을 코드, Git, 제출 묶음에 넣지 않습니다.
+[AGENTS.md](AGENTS.md)를 먼저 읽히고 한 번에 한 제작 단위만 요청하세요. 이후 자료 보호를 강화할 때는 `api/learning-memos.js`의 공개 무인증 접근을 로그인·권한 검사로 제한해야 합니다. 3단계 이후의 로그인, 허용 경로, 5단계의 원본 API 주소, 6단계 이후 정책 규칙은 해당 단계 원고와 계약에 맞춰 추가합니다. 비밀번호·토큰·서버 전용 키·실제 학생 기록을 코드, Git, 제출 묶음에 넣지 않습니다.
 
 `src/decider.mjs`와 `src/detect.mjs`의 로컬 시험은 반 엔진이나 운영 심판의 결과가 아닙니다. 1단계 이후 제출 묶음 계약 `aleph.defense.submission.v2`는 `scripts/bundle.mjs`에 남아 있으며, 코딩 도구가 해당 단계의 최신 배포 주소와 Git 원격을 맞춘 뒤 사용합니다.

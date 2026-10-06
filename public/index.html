@@ -29,11 +29,15 @@
   <script type="module">
     const list = document.querySelector('#notes');
     try {
-      const response = await fetch('/data.json', { cache: 'no-store' });
-      if (!response.ok) throw new Error('공개 자료를 읽을 수 없습니다.');
-      const data = await response.json();
-      if (!Array.isArray(data.notes)) throw new Error('자료 형식이 맞지 않습니다.');
-      list.replaceChildren(...data.notes.map(note => {
+      const response = await fetch('/api/learning-memos', { cache: 'no-store' });
+      if (!response.ok) throw new Error('자료를 불러올 수 없습니다.');
+      const notes = await response.json();
+      if (!Array.isArray(notes)) throw new Error('자료 형식이 맞지 않습니다.');
+      if (notes.length === 0) {
+        const item = document.createElement('li');
+        item.textContent = '표시할 자료가 없습니다.';
+        list.replaceChildren(item);
+      } else list.replaceChildren(...notes.map(note => {
         const item = document.createElement('li');
         const title = document.createElement('strong');
         const content = document.createElement('span');

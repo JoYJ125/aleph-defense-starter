@@ -1,0 +1,1 @@
+GRANT SELECT ON TABLE public.learning_memos TO anon, authenticated;

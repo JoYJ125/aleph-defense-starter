@@ -13,19 +13,20 @@ export async function runAttackChecks(config) {
     throw new Error('aleph.config.json의 실제 배포 주소를 먼저 넣어 주세요.');
   }
   if (typeof config.sampleMarker !== 'string' || !config.sampleMarker) throw new Error('가상 메모의 확인 표시를 넣어 주세요.');
-  const response = await fetch(new URL('/data.json', app), {
-    redirect: 'error', signal: AbortSignal.timeout(10000),
+  const response = await fetch(new URL('/api/learning-memos', app), {
+    redirect: 'error', signal: AbortSignal.timeout(10000), cache: 'no-store',
   });
   let visible = false;
+  let noteCount = 0;
   if (response.ok) {
     try {
-      const data = await response.json();
-      visible = data?.sampleMarker === config.sampleMarker && Array.isArray(data.notes)
-        && data.notes.length > 0;
+      const notes = await response.json();
+      visible = Array.isArray(notes) && notes.length === 4;
+      if (visible) noteCount = notes.length;
     } catch {
       // A non-JSON response is a failed check, not a successful deployment.
     }
   }
-  return [{ attackId: 'anonymous_note_read', expected: '비로그인 화면에서 가상 메모를 확인',
-    observed: visible ? '비로그인 요청에서 공개 가상 메모 확인 표시가 보임' : `비로그인 요청에서 확인 표시가 보이지 않음 (HTTP ${response.status})` }];
+  return [{ attackId: 'anonymous_note_read', expected: '공개 Vercel 함수에서 가상 메모 네 건을 확인',
+    observed: visible ? `비로그인 요청에서 Vercel 함수가 가상 메모 ${noteCount}건 반환` : `비로그인 요청에서 Vercel 함수 메모가 확인되지 않음 (HTTP ${response.status})` }];
 }
