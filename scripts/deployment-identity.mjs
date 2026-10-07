@@ -47,5 +47,6 @@ export function deploymentIdentity(env, config) {
     publicAppUrl: `https://${host.toLowerCase()}`,
     judgeIssuer: config.judgeIssuer,
     allowedRoutes: [...allowedRoutes],
+    originalApiUrl: config.originalApiUrl,
   };
 }
