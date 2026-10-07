@@ -1,5 +1,5 @@
 {
-  "step": 3,
+  "step": 5,
   "repoUrl": "https://github.com/JoYJ125/aleph-defense-starter",
   "publicAppUrl": "https://aleph-defense-starter-taupe.vercel.app",
   "sampleMarker": "SAMPLE_NOTE_1",
@@ -17,6 +17,6 @@
     "PUT /api/learning-memos/:id",
     "DELETE /api/learning-memos/:id"
   ],
-  "originalApiUrl": null,
+  "originalApiUrl": "https://aleph-defense-starter-taupe.vercel.app/api/learning-memos",
   "restoreRoute": null
 }

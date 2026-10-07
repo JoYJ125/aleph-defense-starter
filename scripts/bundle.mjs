@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { isQueryFreeHttpsApiUrl } from './deployment-identity.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const git = (...args) => execFileSync('git', ['-C', root, ...args], {
@@ -50,9 +51,8 @@ try {
         || !config.identityProvider[key].trim()))) {
     fail('3단계부터 aleph.config.json의 identityProvider에 발급자·대상·공개키 주소가 필요합니다. 3단계 제작 2를 다시 확인해 주세요.');
   }
-  if (config.step >= 5 && (typeof config.originalApiUrl !== 'string'
-      || !config.originalApiUrl.startsWith('https://'))) {
-    fail('5단계부터 aleph.config.json의 originalApiUrl에 원본 자료 API의 HTTPS 주소가 필요합니다. 5단계 제작 2를 다시 확인해 주세요.');
+  if (config.step >= 5 && !isQueryFreeHttpsApiUrl(config.originalApiUrl)) {
+    fail('5단계부터 aleph.config.json의 originalApiUrl에 쿼리 없는 원본 자료 API HTTPS 주소가 필요합니다. 5단계 제작 2를 다시 확인해 주세요.');
   }
   if (config.step >= 3 && (!Array.isArray(config.allowedRoutes) || !config.allowedRoutes.length)) {
     fail('3단계부터 aleph.config.json의 allowedRoutes에 자료 API 경로가 필요합니다. 3단계 제작 3을 다시 확인해 주세요.');

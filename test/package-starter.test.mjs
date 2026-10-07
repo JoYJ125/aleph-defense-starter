@@ -26,8 +26,10 @@ function createMemorySupabase(memos) {
       let operation = 'select';
       let selection = '*';
       let values;
+      let ignoreDuplicates = false;
       const filters = [];
-      const matchingRows = () => memos.filter(row => filters.every(([key, value]) => row[key] === value));
+      const matchingRows = () => memos.filter(row => filters.every(([key, value, operator]) =>
+        operator === 'in' ? value.includes(row[key]) : row[key] === value));
       const project = row => Object.fromEntries(selection.split(',').map(key => [key, row[key]]));
 
       async function execute(single) {
@@ -42,6 +44,19 @@ function createMemorySupabase(memos) {
           };
           memos.push(row);
           rows = [row];
+        } else if (operation === 'upsert') {
+          rows = [];
+          for (const value of values) {
+            const existing = memos.find(row => row.id === value.id);
+            if (!existing) {
+              const row = { ...value, created_at: '2026-10-07T00:00:00.000Z' };
+              memos.push(row);
+              rows.push(row);
+            } else if (!ignoreDuplicates) {
+              Object.assign(existing, value);
+              rows.push(existing);
+            }
+          }
         } else if (operation === 'update') {
           rows = matchingRows();
           for (const row of rows) Object.assign(row, values);
@@ -57,8 +72,15 @@ function createMemorySupabase(memos) {
       const builder = {
         select(columns = '*') { selection = columns; return builder; },
         eq(key, value) { filters.push([key, value]); return builder; },
+        in(key, value) { filters.push([key, value, 'in']); return builder; },
         order() { return builder; },
         insert(row) { operation = 'insert'; values = row; return builder; },
+        upsert(rows, options = {}) {
+          operation = 'upsert';
+          values = rows;
+          ignoreDuplicates = options.ignoreDuplicates === true;
+          return builder;
+        },
         update(row) { operation = 'update'; values = row; return builder; },
         delete() { operation = 'delete'; return builder; },
         maybeSingle() { return execute(true); },
@@ -135,6 +157,29 @@ test('learning memos function rejects missing or invalid student tokens without 
   }
 });
 
+test('anonymous list requests are rejected before login verification or database access', async () => {
+  let verifierCalls = 0;
+  let databaseClientCalls = 0;
+  const handler = createLearningMemosHandler({
+    verifyAuthorization: async () => {
+      verifierCalls += 1;
+      return { kind: 'student', userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' };
+    },
+    createSupabaseClient: () => {
+      databaseClientCalls += 1;
+      throw new Error('anonymous request must not reach the database');
+    },
+  });
+  const response = createResponse();
+
+  await handler({ method: 'GET', headers: {}, query: { owner_id: 'attacker-controlled' } }, response);
+
+  assert.equal(response.statusCode, 401);
+  assert.deepEqual(response.body, { error: 'UNAUTHORIZED' });
+  assert.equal(verifierCalls, 0);
+  assert.equal(databaseClientCalls, 0);
+});
+
 test('single memo GET, PUT, and DELETE reject requests without a verified bearer token', async () => {
   for (const method of ['GET', 'PUT', 'DELETE']) {
     const response = createResponse();
@@ -150,7 +195,7 @@ test('single memo GET, PUT, and DELETE reject requests without a verified bearer
   }
 });
 
-test('verified owners can manage their own memos but cannot access or transfer the other owners records', async () => {
+test('verified owners get separate editable starter memos and cannot access or transfer another owner records', async () => {
   const originalUrl = process.env.SUPABASE_URL;
   const originalSecretKey = process.env.SUPABASE_SECRET_KEY;
   const userA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -188,9 +233,25 @@ test('verified owners can manage their own memos but cannot access or transfer t
     process.env.SUPABASE_SECRET_KEY = 'unit-test-key';
 
     const listA = await call('GET', { token: 'Bearer token-a' });
-    assert.deepEqual(listA.body.map(memo => memo.id), [memoA.id]);
+    const starterMemosA = listA.body.filter(memo => ['과제', '포트폴리오', '아침 리추얼', '훈련 행정 자료'].includes(memo.title));
+    assert.equal(starterMemosA.length, 4);
+    assert.deepEqual(listA.body.map(memo => memo.id).sort(), [memoA.id, ...starterMemosA.map(memo => memo.id)].sort());
+    const starterTaskA = starterMemosA.find(memo => memo.title === '과제');
+    assert.ok(starterTaskA);
     const ownReadA = await call('GET', { token: 'Bearer token-a', id: memoA.id });
     assert.deepEqual(ownReadA.body, { id: memoA.id, title: 'A memo', body: 'A private virtual memo' });
+
+    const editStarterA = await call('PUT', {
+      token: 'Bearer token-a', id: starterTaskA.id,
+      body: { title: 'A의 수정 과제', body: 'A만 저장한 내용' },
+    });
+    assert.equal(editStarterA.statusCode, 200);
+    assert.deepEqual(editStarterA.body, { id: starterTaskA.id, title: 'A의 수정 과제', body: 'A만 저장한 내용' });
+
+    const reloadedA = await call('GET', { token: 'Bearer token-a' });
+    const reloadedTaskA = reloadedA.body.find(memo => memo.id === starterTaskA.id);
+    assert.deepEqual(reloadedTaskA, { id: starterTaskA.id, title: 'A의 수정 과제', body: 'A만 저장한 내용' });
+    assert.deepEqual(reloadedA.body.map(memo => memo.id).sort(), listA.body.map(memo => memo.id).sort());
 
     const createA = await call('POST', {
       token: 'Bearer token-a',
@@ -250,6 +311,19 @@ test('verified owners can manage their own memos but cannot access or transfer t
     const createdB = memos.find(memo => memo.id === createB.body.id);
     assert.equal(createdB.owner_id, userB);
 
+    const foreignStarterRead = await call('GET', { token: 'Bearer token-b', id: starterTaskA.id });
+    assert.equal(foreignStarterRead.statusCode, 404);
+    const listB = await call('GET', { token: 'Bearer token-b' });
+    const starterMemosB = listB.body.filter(memo => ['과제', '포트폴리오', '아침 리추얼', '훈련 행정 자료'].includes(memo.title));
+    assert.equal(starterMemosB.length, 4);
+    assert.equal(starterMemosB.some(memo => starterMemosA.some(aMemo => aMemo.id === memo.id)), false);
+    assert.deepEqual(listB.body.map(memo => memo.id).sort(), [memoB.id, createdB.id, ...starterMemosB.map(memo => memo.id)].sort());
+    assert.deepEqual(starterMemosB.find(memo => memo.title === '과제'), {
+      id: starterMemosB.find(memo => memo.title === '과제').id,
+      title: '과제',
+      body: '실습용 가상 과제 기록',
+    });
+
     const foreignDelete = await call('DELETE', { token: 'Bearer token-a', id: memoB.id });
     assert.equal(foreignDelete.statusCode, 404);
     assert.equal(memos.includes(memoB), true);
@@ -258,9 +332,6 @@ test('verified owners can manage their own memos but cannot access or transfer t
     assert.equal(ownDelete.statusCode, 204);
     const readDeleted = await call('GET', { token: 'Bearer token-a', id: createdA.id });
     assert.equal(readDeleted.statusCode, 404);
-
-    const listB = await call('GET', { token: 'Bearer token-b' });
-    assert.deepEqual(listB.body.map(memo => memo.id), [memoB.id, createdB.id]);
 
     const ownDeleteB = await call('DELETE', { token: 'Bearer token-b', id: createdB.id });
     assert.equal(ownDeleteB.statusCode, 204);

@@ -5,10 +5,18 @@ import { runAttackChecks } from '../src/attack-check.mjs';
 import authConfigHandler from '../api/auth-config.js';
 
 const config = {
-  step: 3,
+  step: 5,
   judgeIssuer: 'https://aleph-judge-production.up.railway.app/defense/judge',
   sampleMarker: 'SAMPLE_NOTE_1',
   publicAppUrl: 'https://student-defense.vercel.app',
+  originalApiUrl: 'https://cvzbakfqmfomtyupjiej.supabase.co/rest/v1/learning_memos',
+  allowedRoutes: [
+    'GET /api/learning-memos',
+    'POST /api/learning-memos',
+    'GET /api/learning-memos/:id',
+    'PUT /api/learning-memos/:id',
+    'DELETE /api/learning-memos/:id',
+  ],
 };
 const env = {
   VERCEL_GIT_PROVIDER: 'github',
@@ -21,17 +29,18 @@ const env = {
 test('build identity uses Vercel Git and deployment metadata', () => {
   assert.deepEqual(deploymentIdentity(env, config), {
     schema: 'aleph.defense.deployment.v1',
-    step: 3,
+    step: 5,
     repoUrl: 'https://github.com/student-a/aleph-defense',
     commit: 'a'.repeat(40),
     publicAppUrl: 'https://student-defense-123.vercel.app',
     judgeIssuer: config.judgeIssuer,
+    allowedRoutes: config.allowedRoutes,
   });
   assert.throws(() => deploymentIdentity({ ...env, VERCEL_GIT_PROVIDER: undefined }, config));
   assert.throws(() => deploymentIdentity({ ...env, VERCEL_GIT_COMMIT_SHA: 'short' }, config));
 });
 
-test('third-stage self-check records anonymous memo access without reading returned notes', async () => {
+test('stage 5 self-check records anonymous memo access without reading returned notes', async () => {
   const originalFetch = globalThis.fetch;
   let requestUrl;
   let options;

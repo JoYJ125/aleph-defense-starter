@@ -98,6 +98,11 @@
     let editingMemoId = null;
     let memoRequestId = 0;
 
+    function hasSessionCredentials(session) {
+      return typeof session?.user?.id === 'string' && session.user.id.length > 0
+        && typeof session.access_token === 'string' && session.access_token.trim().length > 0;
+    }
+
     function showMemoMessage(message) {
       const item = document.createElement('li');
       item.textContent = message;
@@ -159,7 +164,7 @@
     }
 
     async function requestMemoApi(path, { method = 'GET', body, session = currentSession } = {}) {
-      if (!session?.access_token) throw new Error('로그인이 필요합니다.');
+      if (!hasSessionCredentials(session)) throw new Error('로그인이 필요합니다.');
       const headers = { authorization: `Bearer ${session.access_token}` };
       const options = { method, cache: 'no-store', headers };
       if (body !== undefined) {
@@ -188,8 +193,7 @@
 
     async function loadMemos(session) {
       const requestId = ++memoRequestId;
-      const accessToken = session?.access_token;
-      if (!accessToken) {
+      if (!hasSessionCredentials(session)) {
         showMemoMessage('로그인 후 자료를 확인할 수 있습니다.');
         return;
       }
@@ -198,7 +202,7 @@
       try {
         const notes = await requestMemoApi('/api/learning-memos', { session });
         if (!Array.isArray(notes)) throw new Error('자료 형식이 맞지 않습니다.');
-        if (requestId === memoRequestId) renderMemos(notes);
+        if (requestId === memoRequestId && hasSessionCredentials(currentSession)) renderMemos(notes);
       } catch (error) {
         if (requestId === memoRequestId) showMemoMessage(error.message);
       }
@@ -206,7 +210,7 @@
 
     function renderSession(session) {
       currentSession = session;
-      const isSignedIn = Boolean(session?.user);
+      const isSignedIn = hasSessionCredentials(session);
       loginForm.hidden = isSignedIn;
       signedIn.hidden = !isSignedIn;
       memoForm.hidden = !isSignedIn;

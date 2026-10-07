@@ -57,6 +57,7 @@ Production 커밋 6dfac2c: /, /data.json, /aleph.json, /api/learning-memos는 �
 
 Supabase: learning_memos는 0행입니다. owner_id는 UUID, RLS는 활성화되어 있고 anon·authenticated 읽기는 거부됩니다.
 
+<<<<<<< HEAD
 GitHub: main 이력을 재작성해 최신 커밋은 6dfac2c입니다. 최신 도달 가능 이력에서 메모 본문 검색은 0건입니다.
 
 <<<<<<< HEAD
@@ -66,3 +67,12 @@ Vercel: 과거 배포 8a09274, 1203cc6, c9df70c, 669d3bb, 8300e2a와 PR #3 배�
 >>>>>>> b19d355 (3단계 저장점)
 
 이전 clone/fork 및 GitHub 캐시는 제어할 수 없습니다. 이 조치만으로 과거 노출이 완전히 해소됐다고 단정하지 않습니다.
+=======
+## 현재 저장점: 4단계 기능 포함
+
+- Supabase Auth 이메일·비밀번호 로그인과 로그아웃을 제공합니다. 자료 API는 `src/verify-login.mjs`가 확인한 로그인 사용자 ID를 기준으로 처리합니다.
+- 메모 목록과 단건 GET·PUT·DELETE는 로그인 사용자 본인의 메모에만 적용됩니다. URL이나 요청 본문의 `owner_id`를 소유권 판단에 사용하지 않으며, 추가 시 서버가 검증한 사용자 ID를 저장합니다.
+- 첫 목록 요청 때 사용자별 기본 메모 네 건을 준비합니다. 사용자별 메모 ID를 분리하고, 이후 목록 요청으로 기존 수정 내용을 덮어쓰지 않습니다.
+- 한 건 응답은 `{id,title,body}`, 수정 요청 본문은 `{title,body}` 형식입니다. 소유자 검사와 사용자별 데이터 분리에 대한 동작은 테스트 실행 여부와 결과를 별도로 기록합니다.
+
+>>>>>>> f7579ea (feat: update step 5 configuration and application logic)
