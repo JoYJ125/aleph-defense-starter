@@ -3,7 +3,6 @@ import config from '../aleph.config.json' with { type: 'json' };
 import { createLoginVerifier } from '../src/verify-login.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
-let verifyLoginAuthorization;
 
 function memoShape(row) {
   return { id: row.id, title: row.title, body: row.content };
@@ -16,7 +15,18 @@ function invalidMemo(body, allowId) {
     || typeof body.body !== 'string' || !body.body.trim();
 }
 
-export default async function handler(request, response) {
+function hasOwnerOverride(body) {
+  return body !== null && typeof body === 'object' && !Array.isArray(body)
+    && Object.hasOwn(body, 'owner_id');
+}
+
+export function createLearningMemosHandler({
+  createSupabaseClient = createClient,
+  verifyAuthorization,
+} = {}) {
+  let verifyLoginAuthorization = verifyAuthorization;
+
+  return async function handler(request, response) {
   response.setHeader('Cache-Control', 'no-store');
 
   const id = request.memoId;
@@ -73,7 +83,7 @@ export default async function handler(request, response) {
   }
 
   try {
-    const supabase = createClient(supabaseUrl, secretKey, {
+    const supabase = createSupabaseClient(supabaseUrl, secretKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
@@ -88,6 +98,9 @@ export default async function handler(request, response) {
     }
 
     if (!hasId && request.method === 'POST') {
+      if (hasOwnerOverride(request.body)) {
+        return response.status(403).json({ error: 'OWNER_ID_NOT_ALLOWED' });
+      }
       if (invalidMemo(request.body, true)) {
         return response.status(400).json({ error: 'INVALID_MEMO' });
       }
@@ -111,6 +124,7 @@ export default async function handler(request, response) {
         .from('learning_memos')
         .select('id,title,content')
         .eq('id', id)
+        .eq('owner_id', identity.userId)
         .maybeSingle();
       if (error) return response.status(502).json({ error: 'MEMOS_UNAVAILABLE' });
       if (!data) return response.status(404).json({ error: 'MEMO_NOT_FOUND' });
@@ -118,18 +132,35 @@ export default async function handler(request, response) {
     }
 
     if (request.method === 'PUT') {
+      if (hasOwnerOverride(request.body)) {
+        return response.status(403).json({ error: 'OWNER_ID_NOT_ALLOWED' });
+      }
       if (invalidMemo(request.body, false)) {
         return response.status(400).json({ error: 'INVALID_MEMO' });
       }
+
+      const { data: existingMemo, error: lookupError } = await supabase
+        .from('learning_memos')
+        .select('id,owner_id')
+        .eq('id', id)
+        .maybeSingle();
+      if (lookupError) return response.status(502).json({ error: 'MEMOS_UNAVAILABLE' });
+      if (!existingMemo || existingMemo.owner_id !== identity.userId) {
+        return response.status(404).json({ error: 'MEMO_NOT_FOUND' });
+      }
+
       const { title, body } = request.body;
       const { data, error } = await supabase
         .from('learning_memos')
         .update({ title, content: body })
         .eq('id', id)
-        .select('id,title,content')
+        .eq('owner_id', identity.userId)
+        .select('id,title,content,owner_id')
         .maybeSingle();
       if (error) return response.status(502).json({ error: 'MEMOS_UNAVAILABLE' });
-      if (!data) return response.status(404).json({ error: 'MEMO_NOT_FOUND' });
+      if (!data || data.owner_id !== identity.userId) {
+        return response.status(404).json({ error: 'MEMO_NOT_FOUND' });
+      }
       return response.status(200).json(memoShape(data));
     }
 
@@ -137,6 +168,7 @@ export default async function handler(request, response) {
       .from('learning_memos')
       .delete()
       .eq('id', id)
+      .eq('owner_id', identity.userId)
       .select('id')
       .maybeSingle();
     if (error) return response.status(502).json({ error: 'MEMOS_UNAVAILABLE' });
@@ -145,4 +177,7 @@ export default async function handler(request, response) {
   } catch {
     return response.status(502).json({ error: 'MEMOS_UNAVAILABLE' });
   }
+  };
 }
+
+export default createLearningMemosHandler();

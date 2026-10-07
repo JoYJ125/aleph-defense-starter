@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import learningMemosHandler from '../api/learning-memos.js';
+import learningMemosHandler, { createLearningMemosHandler } from '../api/learning-memos.js';
 import learningMemoHandler from '../api/learning-memos/[id].js';
 
 const baseline = JSON.parse(await readFile(new URL('../package/baseline-functions.json', import.meta.url)));
@@ -14,6 +14,59 @@ function createResponse() {
     setHeader(name, value) { this.headers.set(name.toLowerCase(), value); },
     status(code) { this.statusCode = code; return this; },
     json(body) { this.body = body; return this; },
+    end() { this.ended = true; return this; },
+  };
+}
+
+function createMemorySupabase(memos) {
+  let generatedId = 0;
+  return {
+    from(table) {
+      assert.equal(table, 'learning_memos');
+      let operation = 'select';
+      let selection = '*';
+      let values;
+      const filters = [];
+      const matchingRows = () => memos.filter(row => filters.every(([key, value]) => row[key] === value));
+      const project = row => Object.fromEntries(selection.split(',').map(key => [key, row[key]]));
+
+      async function execute(single) {
+        let rows;
+        if (operation === 'select') {
+          rows = matchingRows();
+        } else if (operation === 'insert') {
+          const row = {
+            ...values,
+            id: values.id ?? `123e4567-e89b-42d3-a456-${String(++generatedId).padStart(12, '0')}`,
+            created_at: '2026-10-07T00:00:00.000Z',
+          };
+          memos.push(row);
+          rows = [row];
+        } else if (operation === 'update') {
+          rows = matchingRows();
+          for (const row of rows) Object.assign(row, values);
+        } else {
+          rows = matchingRows();
+          for (const row of rows) memos.splice(memos.indexOf(row), 1);
+        }
+
+        const data = rows.map(project);
+        return { data: single ? data[0] ?? null : data, error: null };
+      }
+
+      const builder = {
+        select(columns = '*') { selection = columns; return builder; },
+        eq(key, value) { filters.push([key, value]); return builder; },
+        order() { return builder; },
+        insert(row) { operation = 'insert'; values = row; return builder; },
+        update(row) { operation = 'update'; values = row; return builder; },
+        delete() { operation = 'delete'; return builder; },
+        maybeSingle() { return execute(true); },
+        single() { return execute(true); },
+        then(resolve, reject) { return execute(false).then(resolve, reject); },
+      };
+      return builder;
+    },
   };
 }
 
@@ -94,6 +147,130 @@ test('single memo GET, PUT, and DELETE reject requests without a verified bearer
     }, response);
     assert.equal(response.statusCode, 401);
     assert.deepEqual(response.body, { error: 'UNAUTHORIZED' });
+  }
+});
+
+test('verified owners can manage their own memos but cannot access or transfer the other owners records', async () => {
+  const originalUrl = process.env.SUPABASE_URL;
+  const originalSecretKey = process.env.SUPABASE_SECRET_KEY;
+  const userA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const userB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const memoA = {
+    id: '11111111-1111-4111-8111-111111111111', owner_id: userA,
+    title: 'A memo', content: 'A private virtual memo', created_at: '2026-10-07T00:00:00.000Z',
+  };
+  const memoB = {
+    id: '22222222-2222-4222-8222-222222222222', owner_id: userB,
+    title: 'B memo', content: 'B private virtual memo', created_at: '2026-10-07T00:00:00.000Z',
+  };
+  const memos = [memoA, memoB];
+  const identities = new Map([
+    ['Bearer token-a', { kind: 'student', userId: userA }],
+    ['Bearer token-b', { kind: 'student', userId: userB }],
+  ]);
+  const memorySupabase = createMemorySupabase(memos);
+  const handler = createLearningMemosHandler({
+    verifyAuthorization: async authorization => identities.get(authorization) ?? null,
+    createSupabaseClient: () => memorySupabase,
+  });
+
+  async function call(method, { token, id, body, ownerIdQuery } = {}) {
+    const request = { method, headers: { authorization: token }, body };
+    if (id !== undefined) request.memoId = id;
+    if (ownerIdQuery !== undefined) request.query = { owner_id: ownerIdQuery };
+    const response = createResponse();
+    await handler(request, response);
+    return response;
+  }
+
+  try {
+    process.env.SUPABASE_URL = 'https://cvzbakfqmfomtyupjiej.supabase.co';
+    process.env.SUPABASE_SECRET_KEY = 'unit-test-key';
+
+    const listA = await call('GET', { token: 'Bearer token-a' });
+    assert.deepEqual(listA.body.map(memo => memo.id), [memoA.id]);
+    const ownReadA = await call('GET', { token: 'Bearer token-a', id: memoA.id });
+    assert.deepEqual(ownReadA.body, { id: memoA.id, title: 'A memo', body: 'A private virtual memo' });
+
+    const createA = await call('POST', {
+      token: 'Bearer token-a',
+      body: { title: 'A new memo', body: 'Created by A' },
+    });
+    assert.equal(createA.statusCode, 201);
+    const createdA = memos.find(memo => memo.id === createA.body.id);
+    assert.equal(createdA.owner_id, userA);
+
+    const ownUpdateA = await call('PUT', {
+      token: 'Bearer token-a', id: memoA.id,
+      body: { title: 'A updated', body: 'Updated by A' },
+    });
+    assert.equal(ownUpdateA.statusCode, 200);
+    assert.deepEqual(ownUpdateA.body, { id: memoA.id, title: 'A updated', body: 'Updated by A' });
+    assert.equal(memoA.owner_id, userA);
+
+    const spoofCreate = await call('POST', {
+      token: 'Bearer token-a',
+      body: { title: 'Spoof attempt', body: 'Should not be stored', owner_id: userB },
+    });
+    assert.equal(spoofCreate.statusCode, 403);
+    assert.equal(memos.some(memo => memo.title === 'Spoof attempt'), false);
+
+    const foreignRead = await call('GET', {
+      token: 'Bearer token-a', id: memoB.id, ownerIdQuery: userB,
+    });
+    assert.equal(foreignRead.statusCode, 404);
+
+    const foreignUpdate = await call('PUT', {
+      token: 'Bearer token-a', id: memoB.id,
+      body: { title: 'Changed by A', body: 'Should remain B-owned' },
+    });
+    assert.equal(foreignUpdate.statusCode, 404);
+    assert.equal(memoB.title, 'B memo');
+
+    const spoofUpdate = await call('PUT', {
+      token: 'Bearer token-a', id: memoA.id,
+      body: { title: 'Transfer attempt', body: 'Should remain A-owned', owner_id: userB },
+    });
+    assert.equal(spoofUpdate.statusCode, 403);
+    assert.equal(memoA.owner_id, userA);
+
+    const ownUpdateB = await call('PUT', {
+      token: 'Bearer token-b', id: memoB.id,
+      body: { title: 'B updated', body: 'Updated by B' },
+    });
+    assert.equal(ownUpdateB.statusCode, 200);
+    assert.deepEqual(ownUpdateB.body, { id: memoB.id, title: 'B updated', body: 'Updated by B' });
+    assert.equal(memoB.owner_id, userB);
+
+    const createB = await call('POST', {
+      token: 'Bearer token-b',
+      body: { title: 'B new memo', body: 'Created by B' },
+    });
+    assert.equal(createB.statusCode, 201);
+    const createdB = memos.find(memo => memo.id === createB.body.id);
+    assert.equal(createdB.owner_id, userB);
+
+    const foreignDelete = await call('DELETE', { token: 'Bearer token-a', id: memoB.id });
+    assert.equal(foreignDelete.statusCode, 404);
+    assert.equal(memos.includes(memoB), true);
+
+    const ownDelete = await call('DELETE', { token: 'Bearer token-a', id: createdA.id });
+    assert.equal(ownDelete.statusCode, 204);
+    const readDeleted = await call('GET', { token: 'Bearer token-a', id: createdA.id });
+    assert.equal(readDeleted.statusCode, 404);
+
+    const listB = await call('GET', { token: 'Bearer token-b' });
+    assert.deepEqual(listB.body.map(memo => memo.id), [memoB.id, createdB.id]);
+
+    const ownDeleteB = await call('DELETE', { token: 'Bearer token-b', id: createdB.id });
+    assert.equal(ownDeleteB.statusCode, 204);
+    const readDeletedB = await call('GET', { token: 'Bearer token-b', id: createdB.id });
+    assert.equal(readDeletedB.statusCode, 404);
+  } finally {
+    if (originalUrl === undefined) delete process.env.SUPABASE_URL;
+    else process.env.SUPABASE_URL = originalUrl;
+    if (originalSecretKey === undefined) delete process.env.SUPABASE_SECRET_KEY;
+    else process.env.SUPABASE_SECRET_KEY = originalSecretKey;
   }
 });
 
