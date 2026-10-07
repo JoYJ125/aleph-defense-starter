@@ -1,0 +1,22 @@
+{
+  "step": 5,
+  "repoUrl": "https://github.com/JoYJ125/aleph-defense-starter",
+  "publicAppUrl": "https://aleph-defense-starter-taupe.vercel.app",
+  "sampleMarker": "SAMPLE_NOTE_1",
+  "judgeIssuer": "https://aleph-judge-production.up.railway.app/defense/judge",
+  "identityProvider": {
+    "issuer": "https://cvzbakfqmfomtyupjiej.supabase.co/auth/v1",
+    "jwksUrl": "https://cvzbakfqmfomtyupjiej.supabase.co/auth/v1/.well-known/jwks.json",
+    "audience": "authenticated",
+    "publishableKey": "sb_publishable_GnC2E-wDdGjlP9eqAy1XOg_GErLE3jd"
+  },
+  "allowedRoutes": [
+    "GET /api/learning-memos",
+    "POST /api/learning-memos",
+    "GET /api/learning-memos/:id",
+    "PUT /api/learning-memos/:id",
+    "DELETE /api/learning-memos/:id"
+  ],
+  "originalApiUrl": "https://aleph-defense-starter-taupe.vercel.app/api/learning-memos",
+  "restoreRoute": null
+}
