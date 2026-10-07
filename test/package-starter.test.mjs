@@ -3,8 +3,10 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import learningMemosHandler from '../api/learning-memos.js';
+import learningMemoHandler from '../api/learning-memos/[id].js';
 
 const baseline = JSON.parse(await readFile(new URL('../package/baseline-functions.json', import.meta.url)));
+const config = JSON.parse(await readFile(new URL('../aleph.config.json', import.meta.url)));
 
 function createResponse() {
   return {
@@ -16,56 +18,82 @@ function createResponse() {
 }
 
 test('패키징 함수 기준표는 시작 틀의 실제 API와 일치한다', async () => {
-  const actual = (await readdir(new URL('../api/', import.meta.url)))
-    .filter(name => /\.(?:m?js|ts)$/u.test(name))
-    .map(name => join('api', name).replaceAll('\\', '/')).sort();
+  const root = new URL('../api/', import.meta.url);
+  const [rootEntries, memoEntries] = await Promise.all([
+    readdir(root, { withFileTypes: true }),
+    readdir(new URL('../api/learning-memos/', import.meta.url)),
+  ]);
+  const actual = [
+    ...rootEntries.filter(entry => entry.isFile() && /\.(?:m?js|ts)$/u.test(entry.name))
+      .map(entry => join('api', entry.name).replaceAll('\\', '/')),
+    ...memoEntries.filter(name => /\.(?:m?js|ts)$/u.test(name))
+      .map(name => join('api', 'learning-memos', name).replaceAll('\\', '/')),
+  ].sort();
   assert.equal(baseline.version, 1);
   assert.equal(baseline.starter, 'ChoiTimo/aleph-defense-starter');
   assert.deepEqual(baseline.functions, []);
-  assert.deepEqual(baseline.allowedNew, ['api/ai.js', 'api/learning-memos.js', 'api/threat-intel.js']);
+  assert.deepEqual(baseline.allowedNew, ['api/ai.js', 'api/auth-config.js', 'api/learning-memos.js', 'api/learning-memos/[id].js', 'api/threat-intel.js']);
   assert.deepEqual(actual, [...baseline.functions, ...baseline.allowedNew].sort());
+  assert.deepEqual(config.allowedRoutes, [
+    'GET /api/learning-memos',
+    'POST /api/learning-memos',
+    'GET /api/learning-memos/:id',
+    'PUT /api/learning-memos/:id',
+    'DELETE /api/learning-memos/:id',
+  ]);
 });
 
-test('learning memos function uses the server key and returns only four memo rows', async () => {
+test('learning memos function rejects missing or invalid student tokens without returning data', async () => {
   const originalFetch = globalThis.fetch;
   const originalUrl = process.env.SUPABASE_URL;
   const originalSecretKey = process.env.SUPABASE_SECRET_KEY;
   const testSecretKey = 'unit-test-key';
-  const memos = Array.from({ length: 4 }, (_, index) => ({
-    title: `Memo ${index + 1}`,
-    content: `Sample ${index + 1}`,
-  }));
-  let requestUrl;
-  let requestHeaders;
+  let dataRequested = false;
 
   try {
-    process.env.SUPABASE_URL = 'https://example.supabase.co';
+    process.env.SUPABASE_URL = 'https://cvzbakfqmfomtyupjiej.supabase.co';
     process.env.SUPABASE_SECRET_KEY = testSecretKey;
-    globalThis.fetch = async (url, options) => {
-      requestUrl = new URL(String(url));
-      requestHeaders = new Headers(options.headers);
-      return new Response(JSON.stringify(memos), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
+    globalThis.fetch = async () => {
+      dataRequested = true;
+      throw new Error('unauthorized requests must not fetch memo data');
     };
 
-    const response = createResponse();
-    await learningMemosHandler({ method: 'GET' }, response);
+    const missingTokenResponse = createResponse();
+    await learningMemosHandler({ method: 'GET', headers: {} }, missingTokenResponse);
+    assert.equal(missingTokenResponse.statusCode, 401);
+    assert.deepEqual(missingTokenResponse.body, { error: 'UNAUTHORIZED' });
 
-    assert.equal(response.statusCode, 200);
-    assert.equal(response.headers.get('cache-control'), 'no-store');
-    assert.equal(requestUrl.pathname, '/rest/v1/learning_memos');
-    assert.equal(requestUrl.searchParams.get('limit'), '4');
-    assert.equal(requestHeaders.get('apikey'), testSecretKey);
-    assert.deepEqual(response.body, memos);
-    assert.equal(JSON.stringify(response.body).includes(testSecretKey), false);
+    const invalidTokenResponse = createResponse();
+    await learningMemosHandler({
+      method: 'GET',
+      headers: { authorization: 'Bearer e30.e30.sig' },
+      userId: 'attacker-controlled',
+      role: 'authenticated',
+    }, invalidTokenResponse);
+    assert.equal(invalidTokenResponse.statusCode, 401);
+    assert.deepEqual(invalidTokenResponse.body, { error: 'UNAUTHORIZED' });
+    assert.equal(dataRequested, false);
   } finally {
     globalThis.fetch = originalFetch;
     if (originalUrl === undefined) delete process.env.SUPABASE_URL;
     else process.env.SUPABASE_URL = originalUrl;
     if (originalSecretKey === undefined) delete process.env.SUPABASE_SECRET_KEY;
     else process.env.SUPABASE_SECRET_KEY = originalSecretKey;
+  }
+});
+
+test('single memo GET, PUT, and DELETE reject requests without a verified bearer token', async () => {
+  for (const method of ['GET', 'PUT', 'DELETE']) {
+    const response = createResponse();
+    await learningMemoHandler({
+      method,
+      query: { id: '123e4567-e89b-42d3-a456-426614174000' },
+      headers: {},
+      userId: 'attacker-controlled',
+      role: 'authenticated',
+    }, response);
+    assert.equal(response.statusCode, 401);
+    assert.deepEqual(response.body, { error: 'UNAUTHORIZED' });
   }
 });
 
@@ -76,13 +104,15 @@ test('learning memos function rejects unsupported methods and missing configurat
     process.env.SUPABASE_URL = 'https://example.supabase.co';
     process.env.SUPABASE_SECRET_KEY = 'unit-test-key';
     const methodResponse = createResponse();
-    await learningMemosHandler({ method: 'POST' }, methodResponse);
+    await learningMemosHandler({ method: 'PATCH' }, methodResponse);
     assert.equal(methodResponse.statusCode, 405);
-    assert.equal(methodResponse.headers.get('allow'), 'GET');
+    assert.equal(methodResponse.headers.get('allow'), 'GET, POST');
 
     delete process.env.SUPABASE_SECRET_KEY;
     const configurationResponse = createResponse();
-    await learningMemosHandler({ method: 'GET' }, configurationResponse);
+    await learningMemosHandler({
+      method: 'GET', headers: { authorization: 'Bearer e30.e30.sig' },
+    }, configurationResponse);
     assert.equal(configurationResponse.statusCode, 500);
     assert.deepEqual(configurationResponse.body, { error: 'SERVER_CONFIGURATION_ERROR' });
   } finally {

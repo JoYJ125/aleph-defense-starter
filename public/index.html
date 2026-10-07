@@ -12,45 +12,292 @@
     h1 { margin: 16px 0; font-size: clamp(30px, 7vw, 48px); line-height: 1.2; }
     p { font-size: 17px; line-height: 1.7; color: #bfd0e5; }
     .notice { margin: 26px 0; padding: 18px; border: 1px solid #d07384; border-radius: 14px; color: #ffe3e8; background: #612a3544; }
+    .auth { margin: 28px 0; padding-bottom: 24px; border-bottom: 1px solid #51667c; }
+    .auth h2 { margin: 0 0 16px; font-size: 22px; }
+    .auth form { display: grid; gap: 12px; max-width: 420px; }
+    .auth label { display: grid; gap: 6px; color: #bfd0e5; font-size: 14px; }
+    .auth input, .auth textarea, .auth button { min-height: 44px; box-sizing: border-box; border: 1px solid #71869b; border-radius: 6px; padding: 10px 12px; font: inherit; }
+    .auth input { background: #101a28; color: #ecf4ff; }
+    .auth textarea { resize: vertical; background: #101a28; color: #ecf4ff; }
+    .auth button { width: fit-content; background: #8ad8df; color: #101a28; font-weight: 700; cursor: pointer; }
+    .auth button:disabled { cursor: wait; opacity: .65; }
+    .auth [hidden] { display: none; }
+    .memo-form { margin-top: 22px; }
+    .memo-form h3 { margin: 0 0 12px; font-size: 18px; }
+    .memo-actions { display: flex; gap: 8px; margin-top: 14px; }
+    .memo-actions button { min-height: 36px; border: 1px solid #71869b; border-radius: 6px; padding: 7px 10px; background: #8ad8df; color: #101a28; font: inherit; font-weight: 700; cursor: pointer; }
+    .memo-actions .danger { border-color: #d07384; background: transparent; color: #ffe3e8; }
+    #auth-status { min-height: 1.5em; color: #ffe3e8; }
+    #memo-status { min-height: 1.5em; color: #bfd0e5; }
     ul { list-style: none; display: grid; gap: 12px; padding: 0; }
     li { border: 1px solid #51667c; border-radius: 14px; padding: 17px 19px; background: #1a2a3d; }
     strong { display: block; font-size: 18px; margin-bottom: 5px; }
-    li span { color: #bfd0e5; }
+    li span { color: #bfd0e5; white-space: pre-wrap; }
   </style>
 </head>
 <body>
   <main>
     <div class="eyebrow">BYTE BACK · 1단계 피해 확인</div>
     <h1>점령된 자료실</h1>
-    <p>지금은 보호 장치가 없는 상태입니다. 아래 기록은 모두 실습을 위해 만든 가상 자료입니다.</p>
-    <div class="notice">로그인하지 않은 방문자도 자료를 볼 수 있습니다. 공개 범위를 확인하고, 다음 제작 단계에서 접근을 차례로 막아 주세요.</div>
-    <ul id="notes" aria-live="polite"><li>가상 자료를 불러오는 중입니다.</li></ul>
+    <p>로그인한 사용자만 자료를 볼 수 있습니다. 아래 기록은 모두 실습을 위해 만든 가상 자료입니다.</p>
+    <section class="auth" aria-labelledby="auth-heading">
+      <h2 id="auth-heading">자료실 로그인</h2>
+      <form id="login-form">
+        <label>이메일
+          <input id="login-email" name="email" type="email" autocomplete="username" required>
+        </label>
+        <label>비밀번호
+          <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button id="login-submit" type="submit" disabled>로그인</button>
+      </form>
+      <div id="signed-in" hidden>
+        <p id="signed-in-user"></p>
+        <button id="logout-button" type="button">로그아웃</button>
+      </div>
+      <form id="memo-form" class="memo-form" hidden>
+        <h3 id="memo-form-heading">새 가상 메모</h3>
+        <label>제목
+          <input id="memo-title" name="title" maxlength="200" required>
+        </label>
+        <label>내용
+          <textarea id="memo-body" name="body" rows="4" required></textarea>
+        </label>
+        <div class="memo-actions">
+          <button id="memo-save" type="submit">메모 추가</button>
+          <button id="memo-cancel" type="button" hidden>수정 취소</button>
+        </div>
+      </form>
+      <p id="memo-status" role="status" aria-live="polite"></p>
+      <p id="auth-status" role="status" aria-live="polite">로그인 기능을 준비하고 있습니다.</p>
+    </section>
+    <div class="notice">로그인하지 않은 방문자의 자료 요청은 거부됩니다.</div>
+    <ul id="notes" aria-live="polite"><li>로그인 후 자료를 확인할 수 있습니다.</li></ul>
   </main>
   <script type="module">
+    const loginForm = document.querySelector('#login-form');
+    const loginSubmit = document.querySelector('#login-submit');
+    const loginPassword = document.querySelector('#login-password');
+    const signedIn = document.querySelector('#signed-in');
+    const signedInUser = document.querySelector('#signed-in-user');
+    const authStatus = document.querySelector('#auth-status');
     const list = document.querySelector('#notes');
-    try {
-      const response = await fetch('/api/learning-memos', { cache: 'no-store' });
-      if (!response.ok) throw new Error('자료를 불러올 수 없습니다.');
-      const notes = await response.json();
-      if (!Array.isArray(notes)) throw new Error('자료 형식이 맞지 않습니다.');
+    const memoForm = document.querySelector('#memo-form');
+    const memoFormHeading = document.querySelector('#memo-form-heading');
+    const memoTitle = document.querySelector('#memo-title');
+    const memoBody = document.querySelector('#memo-body');
+    const memoSave = document.querySelector('#memo-save');
+    const memoCancel = document.querySelector('#memo-cancel');
+    const memoStatus = document.querySelector('#memo-status');
+    let currentSession = null;
+    let editingMemoId = null;
+    let memoRequestId = 0;
+
+    function showMemoMessage(message) {
+      const item = document.createElement('li');
+      item.textContent = message;
+      list.replaceChildren(item);
+    }
+
+    function renderMemos(notes) {
       if (notes.length === 0) {
-        const item = document.createElement('li');
-        item.textContent = '표시할 자료가 없습니다.';
-        list.replaceChildren(item);
-      } else list.replaceChildren(...notes.map(note => {
+        showMemoMessage('표시할 자료가 없습니다.');
+        return;
+      }
+      list.replaceChildren(...notes.map(note => {
         const item = document.createElement('li');
         const title = document.createElement('strong');
         const content = document.createElement('span');
+        const actions = document.createElement('div');
+        const editButton = document.createElement('button');
+        const deleteButton = document.createElement('button');
         title.textContent = note.title;
-        content.textContent = note.content;
-        item.append(title, content);
+        content.textContent = note.body;
+        actions.className = 'memo-actions';
+        editButton.type = 'button';
+        editButton.textContent = '수정';
+        editButton.setAttribute('aria-label', `${note.title} 수정`);
+        editButton.addEventListener('click', () => {
+          editingMemoId = note.id;
+          memoTitle.value = note.title;
+          memoBody.value = note.body;
+          memoFormHeading.textContent = '가상 메모 수정';
+          memoSave.textContent = '수정 저장';
+          memoCancel.hidden = false;
+          memoForm.hidden = false;
+          memoTitle.focus();
+        });
+        deleteButton.type = 'button';
+        deleteButton.className = 'danger';
+        deleteButton.textContent = '삭제';
+        deleteButton.setAttribute('aria-label', `${note.title} 삭제`);
+        deleteButton.addEventListener('click', async () => {
+          deleteButton.disabled = true;
+          memoStatus.textContent = '메모를 삭제하고 있습니다.';
+          try {
+            await requestMemoApi(`/api/learning-memos/${encodeURIComponent(note.id)}`, {
+              method: 'DELETE',
+            });
+            if (editingMemoId === note.id) resetMemoForm();
+            memoStatus.textContent = '메모를 삭제했습니다.';
+            await loadMemos(currentSession);
+          } catch (error) {
+            memoStatus.textContent = `삭제 실패: ${errorMessage(error)}`;
+          } finally {
+            deleteButton.disabled = false;
+          }
+        });
+        actions.append(editButton, deleteButton);
+        item.append(title, content, actions);
         return item;
       }));
-    } catch (error) {
-      const item = document.createElement('li');
-      item.textContent = error.message;
-      list.replaceChildren(item);
     }
+
+    async function requestMemoApi(path, { method = 'GET', body, session = currentSession } = {}) {
+      if (!session?.access_token) throw new Error('로그인이 필요합니다.');
+      const headers = { authorization: `Bearer ${session.access_token}` };
+      const options = { method, cache: 'no-store', headers };
+      if (body !== undefined) {
+        headers['content-type'] = 'application/json';
+        options.body = JSON.stringify(body);
+      }
+      const response = await fetch(path, options);
+      if (response.status === 204) return null;
+      const result = await response.json().catch(() => null);
+      if (!response.ok) {
+        if (response.status === 401) throw new Error('로그인이 필요합니다. 다시 로그인해 주세요.');
+        if (result?.error === 'MEMO_NOT_FOUND') throw new Error('메모를 찾을 수 없습니다.');
+        if (result?.error === 'INVALID_MEMO') throw new Error('제목과 내용을 확인해 주세요.');
+        throw new Error('자료 요청을 처리하지 못했습니다.');
+      }
+      return result;
+    }
+
+    function resetMemoForm() {
+      editingMemoId = null;
+      memoForm.reset();
+      memoFormHeading.textContent = '새 가상 메모';
+      memoSave.textContent = '메모 추가';
+      memoCancel.hidden = true;
+    }
+
+    async function loadMemos(session) {
+      const requestId = ++memoRequestId;
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        showMemoMessage('로그인 후 자료를 확인할 수 있습니다.');
+        return;
+      }
+
+      showMemoMessage('자료를 불러오는 중입니다.');
+      try {
+        const notes = await requestMemoApi('/api/learning-memos', { session });
+        if (!Array.isArray(notes)) throw new Error('자료 형식이 맞지 않습니다.');
+        if (requestId === memoRequestId) renderMemos(notes);
+      } catch (error) {
+        if (requestId === memoRequestId) showMemoMessage(error.message);
+      }
+    }
+
+    function renderSession(session) {
+      currentSession = session;
+      const isSignedIn = Boolean(session?.user);
+      loginForm.hidden = isSignedIn;
+      signedIn.hidden = !isSignedIn;
+      memoForm.hidden = !isSignedIn;
+      if (isSignedIn) {
+        signedInUser.textContent = `${session.user.email || '계정'}으로 로그인되어 있습니다.`;
+      } else {
+        resetMemoForm();
+        memoStatus.textContent = '';
+      }
+      void loadMemos(session);
+    }
+
+    function errorMessage(error) {
+      return error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.';
+    }
+
+    try {
+      const [{ createClient }, configResponse] = await Promise.all([
+        import('https://esm.sh/@supabase/supabase-js@2.117.2'),
+        fetch('/api/auth-config', { cache: 'no-store' }),
+      ]);
+      const config = await configResponse.json();
+      if (!configResponse.ok) {
+        throw new Error('로그인 설정을 불러오지 못했습니다.');
+      }
+
+      const supabase = createClient(config.url, config.publishableKey);
+      supabase.auth.onAuthStateChange((_event, session) => renderSession(session));
+      const { data, error } = await supabase.auth.getSession();
+      if (error) throw error;
+      renderSession(data.session);
+      loginSubmit.disabled = false;
+      authStatus.textContent = data.session ? '로그인 상태입니다.' : '로그인해 주세요.';
+
+      memoForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        memoSave.disabled = true;
+        const isEditing = editingMemoId !== null;
+        memoStatus.textContent = isEditing ? '메모를 수정하고 있습니다.' : '메모를 추가하고 있습니다.';
+        try {
+          const path = isEditing
+            ? `/api/learning-memos/${encodeURIComponent(editingMemoId)}`
+            : '/api/learning-memos';
+          await requestMemoApi(path, {
+            method: isEditing ? 'PUT' : 'POST',
+            body: { title: memoTitle.value.trim(), body: memoBody.value },
+          });
+          resetMemoForm();
+          memoStatus.textContent = isEditing ? '메모를 수정했습니다.' : '메모를 추가했습니다.';
+          await loadMemos(currentSession);
+        } catch (error) {
+          memoStatus.textContent = `${isEditing ? '수정' : '추가'} 실패: ${errorMessage(error)}`;
+        } finally {
+          memoSave.disabled = false;
+        }
+      });
+
+      memoCancel.addEventListener('click', resetMemoForm);
+
+      loginForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        loginSubmit.disabled = true;
+        authStatus.textContent = '로그인 중입니다.';
+        try {
+          const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
+            email: document.querySelector('#login-email').value,
+            password: loginPassword.value,
+          });
+          if (loginError) throw loginError;
+          if (!loginData.session) throw new Error('로그인 세션이 생성되지 않았습니다. 이메일 확인 설정을 확인해 주세요.');
+          loginPassword.value = '';
+          authStatus.textContent = '로그인되었습니다.';
+        } catch (error) {
+          authStatus.textContent = `로그인 실패: ${errorMessage(error)}`;
+        } finally {
+          loginSubmit.disabled = false;
+        }
+      });
+
+      document.querySelector('#logout-button').addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        try {
+          const { error: logoutError } = await supabase.auth.signOut();
+          if (logoutError) throw logoutError;
+          authStatus.textContent = '로그아웃되었습니다.';
+        } catch (error) {
+          authStatus.textContent = `로그아웃 실패: ${errorMessage(error)}`;
+        } finally {
+          button.disabled = false;
+        }
+      });
+    } catch (error) {
+      authStatus.textContent = `로그인 기능 오류: ${errorMessage(error)}`;
+    }
+
   </script>
 </body>
 </html>
