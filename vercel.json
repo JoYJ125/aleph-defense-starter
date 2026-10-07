@@ -1,7 +1,8 @@
-{
-  "$schema": "https://openapi.vercel.sh/vercel.json",
+ {
+ "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "buildCommand": "npm run build",
+  "outputDirectory": "public",
   "headers": [
     {
       "source": "/(.*)",
@@ -11,16 +12,6 @@
           "value": "nosniff"
         }
       ]
-    }
-  ],
-  "rewrites": [
-    {
-      "source": "/aleph.json",
-      "destination": "/aleph.config.json"
-    },
-    {
-      "source": "/aleph.config.json",
-      "destination": "/aleph.config.json"
     }
   ]
 }
