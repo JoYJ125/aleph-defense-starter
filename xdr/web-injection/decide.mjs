@@ -70,12 +70,13 @@ export function decide(alert) {
 
   // 점수는 100 단위 정수로 계산해 소수 오차 없이 경계값(0.85, 0.5)을 비교합니다.
   let points = 0;
+  let levelOnly = false;
   let reason;
   if (fullHits.length) {
     points = 70 + (fullHits.length > 1 ? 10 : 0);
     reason = `${fullHits.map((p) => p.name).join(' + ')} 일치 (반복 ${count}건)`;
   } else if (otherInjection && count >= MIN_COUNT) {
-    points = 55;
+    points = 70;
     reason = `이름 있는 패턴 없음, T1190 주입 표기 반복 ${count}건`;
   } else if (keywordHits.length) {
     points = 40;
@@ -83,11 +84,16 @@ export function decide(alert) {
   } else if (has(WEAK_CUES)) {
     points = 50;
     reason = `주입 의심 표기 약한 신호 (반복 ${count}건)`;
+  } else if (level >= 5) {
+    // 공격 표기는 없어도 규칙 수준이 평소(3 이하)보다 높으면 기록만 하지 않고 알림으로 남깁니다.
+    points = ALERT_AT;
+    levelOnly = true;
+    reason = `일치하는 패턴 없음, 규칙 수준 ${level} 로 알림만`;
   } else {
     reason = '일치하는 패턴 없음';
   }
 
-  if (points > 0) {
+  if (points > 0 && !levelOnly) {
     if (level >= 10) points += 10;
     else if (level >= 5) points += 5;
     if (hasT1190) points += 10;
