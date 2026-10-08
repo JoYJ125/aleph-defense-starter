@@ -18,6 +18,13 @@
 - `patterns.json`은 MITRE ATT&CK T1110 근거 패턴 두 개, `read-alerts.mjs`는 확인용 읽기 모듈입니다.
 - `respond.mjs`는 `block` 후보를 만료 시각·근거 경보 번호가 붙은 거부 규칙(`deny-rules.json`, Git 제외)과 `xdr/alerts.log`(Git 제외)에 기록합니다. Supabase에 기록하려면 `docs/xdr-supabase.sql`을 SQL Editor에서 한 번 실행하고, 이 컴퓨터 터미널에 `SUPABASE_URL`·`SUPABASE_SECRET_KEY`를 직접 설정한 뒤 `node xdr/brute-force/respond.mjs --supabase`를 실행합니다(키는 파일·Git에 넣지 않습니다). 사이트(Vercel)에는 XDR 서버 함수를 두지 않아 사이트가 이 규칙을 읽지는 않으며, 판정기 요청 계약에 출발 주소가 없어 `src/decider.mjs`에도 연결하지 않았으므로 실제 접속 차단은 아직 아닙니다.
 
+## 보너스 xdr-02 저장점: 웹 주입 공격 (2026-10-08)
+
+- `xdr/web-injection/decide.mjs`의 `decide(alert)`가 연습 경보 26건을 `block`/`alert`/`record`로 나눕니다. 다시 실행: `npm run xdr:run -- web-injection` → `xdr/web-injection/result.json`.
+- 마지막 실행 결과: block 7, alert 5, record 14. 정상 이벤트(wi-18~26)는 모두 `record`입니다. 정답표가 없어 이 구분은 학생의 자기 점검이며 심판 판정이 아닙니다.
+- `patterns.json`은 MITRE ATT&CK T1190 근거 패턴 세 개, `read-alerts.mjs`는 확인용 읽기 모듈입니다. `decide.mjs`는 import가 없고 파일·네트워크를 쓰지 않습니다.
+- `respond.mjs`는 `block` 후보만 만료 시각·근거 경보 번호가 붙은 거부 규칙(`xdr/web-injection/deny-rules.json`, Git 제외)과 `xdr/alerts.log`(Git 제외)에 기록합니다. 실행: `node xdr/web-injection/respond.mjs`. Supabase 저장은 연결하지 않았고, 사이트(Vercel)는 이 규칙을 읽지 않으며 `src/decider.mjs`에도 연결하지 않아 실제 접속 차단은 아직 아닙니다.
+
 ## 1단계 시작 절차: 세 걸음
 
 1. GitHub 계정을 만듭니다.

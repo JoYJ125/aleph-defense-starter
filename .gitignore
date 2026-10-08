@@ -9,3 +9,4 @@ public/aleph.json
 
 xdr/brute-force/deny-rules.json
 xdr/alerts.log
+xdr/web-injection/deny-rules.json
