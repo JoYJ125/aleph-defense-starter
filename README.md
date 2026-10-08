@@ -11,6 +11,13 @@
 - `npm run test:package`와 `npm run test:r5`로 API 계약 및 무인증 거부 점검을 실행합니다. `npm run bundle`은 `aleph.config.json`의 실제 Production 주소로 무인증 목록 GET을 보내 결과를 기록하며, 심판 판정은 아닙니다. 소유자 검사와 데이터 분리 동작은 테스트를 실행한 결과를 별도로 기록하세요.
 - 현재 코드는 보호된 Vercel Preview에 배포되어 있습니다. `aleph.config.json`의 `publicAppUrl`은 Production 주소이며 Production에는 이전 코드가 남아 있습니다. Preview에는 `SUPABASE_URL`, `SUPABASE_SECRET_KEY` 환경변수가 없어 로그인 후 CRUD 왕복은 아직 확인되지 않았습니다.
 
+## 보너스 xdr-01 저장점: 무차별 로그인 공격 (2026-10-08)
+
+- `xdr/brute-force/decide.mjs`의 `decide(alert)`가 연습 경보 28건을 `block`/`alert`/`record`로 나눕니다. 다시 실행: `npm run xdr:run -- brute-force` → `xdr/brute-force/result.json`.
+- 마지막 실행 결과: block 10, alert 9, record 9. 정상 이벤트(bf-20~28)는 모두 `record`입니다. 정답표가 없어 이 구분은 학생의 자기 점검이며 심판 판정이 아닙니다.
+- `patterns.json`은 MITRE ATT&CK T1110 근거 패턴 두 개, `read-alerts.mjs`는 확인용 읽기 모듈입니다.
+- `respond.mjs`는 `block` 후보를 만료 시각·근거 경보 번호가 붙은 거부 규칙(`deny-rules.json`, Git 제외)과 `xdr/alerts.log`(Git 제외)에 기록합니다. 판정기 요청 계약에 출발 주소가 없어 `src/decider.mjs`에는 연결하지 않았으므로, 실제 접속 차단은 아직 아닙니다.
+
 ## 1단계 시작 절차: 세 걸음
 
 1. GitHub 계정을 만듭니다.

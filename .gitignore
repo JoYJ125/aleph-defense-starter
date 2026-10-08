@@ -6,3 +6,6 @@ node_modules/
 public/aleph.json
 .vercel
 .env*
+
+xdr/brute-force/deny-rules.json
+xdr/alerts.log
