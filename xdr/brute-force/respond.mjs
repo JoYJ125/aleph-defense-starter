@@ -41,14 +41,76 @@ export async function loadRules(path = RULES_PATH) {
   }
 }
 
+// 저장소는 loadRules(now) / saveRules({live, added, now}) / appendLog(lines) 세 가지만 제공하면 됩니다.
+// 파일 저장소는 로컬 실행용이고, Vercel 서버에서는 파일이 남지 않으므로 Supabase 저장소를 씁니다.
+export function createFileStore({ rulesPath = RULES_PATH, logPath = LOG_PATH } = {}) {
+  return {
+    loadRules: () => loadRules(rulesPath),
+    async saveRules({ live, added }) {
+      await mkdir(dirname(rulesPath), { recursive: true });
+      const tmp = `${rulesPath}.tmp`;
+      await writeFile(tmp, `${JSON.stringify({ schema: 'aleph.xdr.deny-rules.v1', rules: [...live, ...added] }, null, 2)}\n`, 'utf8');
+      await rename(tmp, rulesPath);
+    },
+    async appendLog(lines) {
+      await mkdir(dirname(logPath), { recursive: true });
+      await appendFile(logPath, `${lines.join('\n')}\n`, 'utf8');
+    },
+  };
+}
+
+// supabase 는 서버 전용 키로 만든 클라이언트입니다. 테이블은 docs/xdr-supabase.sql 로 만듭니다.
+export function createSupabaseStore(supabase) {
+  return {
+    async loadRules(now) {
+      const { data, error } = await supabase
+        .from('xdr_deny_rules')
+        .select('id,srcip,evidence_alert_id,confidence,reason,created_at,expires_at')
+        .gt('expires_at', now.toISOString());
+      if (error) throw new Error('xdr_rules_unavailable');
+      return (data ?? []).map((r) => ({
+        id: r.id,
+        action: 'deny',
+        srcip: r.srcip,
+        evidenceAlertId: r.evidence_alert_id,
+        confidence: Number(r.confidence),
+        reason: r.reason,
+        createdAt: r.created_at,
+        expiresAt: r.expires_at,
+      }));
+    },
+    async saveRules({ added, now }) {
+      const expired = await supabase.from('xdr_deny_rules').delete().lte('expires_at', now.toISOString());
+      if (expired.error) throw new Error('xdr_rules_unavailable');
+      if (!added.length) return;
+      const { error } = await supabase.from('xdr_deny_rules').upsert(
+        added.map((r) => ({
+          id: r.id,
+          srcip: r.srcip,
+          evidence_alert_id: r.evidenceAlertId,
+          confidence: r.confidence,
+          reason: r.reason,
+          created_at: r.createdAt,
+          expires_at: r.expiresAt,
+        })),
+        { onConflict: 'id', ignoreDuplicates: true },
+      );
+      if (error) throw new Error('xdr_rules_unavailable');
+    },
+    async appendLog(lines) {
+      const { error } = await supabase.from('xdr_alert_log').insert(lines.map((line) => ({ line })));
+      if (error) throw new Error('xdr_log_unavailable');
+    },
+  };
+}
+
 export function isDenied(srcip, rules, now = new Date()) {
   return rules.some((r) => r.srcip === srcip && Date.parse(r.expiresAt) > now.getTime());
 }
 
 export async function respond(alerts, options = {}) {
   const now = options.now ?? new Date();
-  const rulesPath = options.rulesPath ?? RULES_PATH;
-  const logPath = options.logPath ?? LOG_PATH;
+  const store = options.store ?? createFileStore({ rulesPath: options.rulesPath, logPath: options.logPath });
   const ttlMs = options.ttlMs ?? TTL_MS;
 
   const results = [];
@@ -59,7 +121,7 @@ export async function respond(alerts, options = {}) {
     results.filter((x) => x.result.action !== 'block').map((x) => x.alert?.data?.srcip),
   );
 
-  const live = (await loadRules(rulesPath)).filter((r) => Date.parse(r.expiresAt) > now.getTime());
+  const live = (await store.loadRules(now)).filter((r) => Date.parse(r.expiresAt) > now.getTime());
   const added = [];
   const lines = [];
 
@@ -91,14 +153,8 @@ export async function respond(alerts, options = {}) {
     );
   }
 
-  if (added.length) {
-    await mkdir(dirname(rulesPath), { recursive: true });
-    const tmp = `${rulesPath}.tmp`;
-    await writeFile(tmp, `${JSON.stringify({ schema: 'aleph.xdr.deny-rules.v1', rules: [...live, ...added] }, null, 2)}\n`, 'utf8');
-    await rename(tmp, rulesPath);
-  }
-  await mkdir(dirname(logPath), { recursive: true });
-  await appendFile(logPath, `${lines.join('\n')}\n`, 'utf8');
+  if (added.length) await store.saveRules({ live, added, now });
+  if (lines.length) await store.appendLog(lines);
 
   return { results, added, lines };
 }
@@ -106,10 +162,24 @@ export async function respond(alerts, options = {}) {
 const isMain = process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
 if (isMain) {
   const alerts = JSON.parse(await readFile(FIXTURE, 'utf8')).alerts;
-  const { results, added } = await respond(alerts);
-  const rules = await loadRules();
+  const useSupabase = process.argv.includes('--supabase');
+  let store = createFileStore();
+  if (useSupabase) {
+    // 키는 환경변수로만 받고 출력하지 않습니다. Vercel 서버가 아니라 이 컴퓨터에서 실행할 때만 씁니다.
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SECRET_KEY;
+    if (!url || !key) {
+      console.error('SUPABASE_URL, SUPABASE_SECRET_KEY 환경변수가 필요합니다. (값은 터미널에 직접 설정하고 파일·Git에는 넣지 않습니다.)');
+      process.exit(1);
+    }
+    const { createClient } = await import('@supabase/supabase-js');
+    store = createSupabaseStore(createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } }));
+  }
+  const { results, added } = await respond(alerts, { store });
+  const rules = await store.loadRules(new Date());
   const now = new Date();
   const blocked = results.filter(({ alert }) => isDenied(alert.data?.srcip, rules, now));
-  console.log(`경보 ${alerts.length}건, 새 거부 규칙 ${added.length}건, 규칙 파일 총 ${rules.length}건`);
+  const where = useSupabase ? 'Supabase 규칙 테이블' : '규칙 파일';
+  console.log(`경보 ${alerts.length}건, 새 거부 규칙 ${added.length}건, ${where} 총 ${rules.length}건`);
   console.log(`막힌 경보 ${blocked.length}건, 통과 ${alerts.length - blocked.length}건`);
 }
