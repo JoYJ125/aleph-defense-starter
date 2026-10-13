@@ -2,17 +2,7 @@
 
 이 저장소는 1단계에서 학생 본인이 GitHub 저장소와 Vercel 배포를 만드는 출발점입니다. 실제 학생 자료, 토큰, 비밀키를 넣지 마세요.
 
-## 현재 저장점: 7단계 기능 포함 (2026-10-13)
-
-- SDP 판정기(`src/decider.mjs`)에 등록된 기기 검증(`device_registered`)과 함께 평소와 다른 복합 이상 접속에 추가 본인 확인을 요청하는 `step_up_required` 규칙을 구현했습니다.
-- 검증된 엔진 신호(`source === 'judge_fixture'`)를 바탕으로 심야/새벽 시간대, 낯선 네트워크, 대량 읽기 사건이 결합된 요청에 대해 재인증(`stepUp`)이 없으면 `decision: 'step_up'`, `reasonCode: 'step_up_required'`를 반환합니다.
-- 재인증이 완료된 요청이나 일반 정상 요청은 `decision: 'allow'`, `reasonCode: 'approved'`로 통과하며, 미등록 기기는 기존대로 `deny` 및 `device_not_registered`로 차단합니다.
-- 가상 사건 및 판정기 확인 순서:
-  1. `node scripts/fixture-7.mjs` 명령으로 정상 사건(`allow`)과 복합 이상 사건(`step_up`) 판정을 확인합니다.
-  2. `npm run decider:test` 명령으로 4가지 가상 요청(등록 기기, 미등록 기기, 복합 이상, 재인증 통과)이 모두 통과하는지 확인합니다.
-  (※ 이 명령은 가상 사건 로컬 연습이며 심판 통과 증거가 아닙니다. 실제 재인증 전 자료 차단과 재인증 후 접근 허용 실측은 계약이 준비된 환경에서만 동작합니다.)
-
-## 이전 저장점: 6단계 기능 포함 (2026-10-13)
+## 현재 저장점: 6단계 기능 포함 (2026-10-13)
 
 - SDP 판정기(`src/decider.mjs`)에 등록된 기기만 자료실 접근을 허용하는 `device_registered` 규칙을 적용했습니다.
 - 요청의 `deviceRegistered`가 `true`일 때만 접근을 허용(`decision: 'allow'`, `reasonCode: 'approved'`)합니다.
