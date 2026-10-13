@@ -39,6 +39,11 @@ function hasOwnerOverride(body) {
     && Object.hasOwn(body, 'owner_id');
 }
 
+function hasRoleOverride(body) {
+  return body !== null && typeof body === 'object' && !Array.isArray(body)
+    && (Object.hasOwn(body, 'role') || Object.hasOwn(body, 'roles') || Object.hasOwn(body, 'is_instructor') || Object.hasOwn(body, 'isInstructor'));
+}
+
 async function ensureStarterMemos(supabase, userId) {
   const starterRows = STARTER_MEMOS.map(memo => ({
     id: starterMemoId(userId, memo.key),
@@ -155,6 +160,9 @@ export function createLearningMemosHandler({
       if (hasOwnerOverride(request.body)) {
         return response.status(403).json({ error: 'OWNER_ID_NOT_ALLOWED' });
       }
+      if (hasRoleOverride(request.body)) {
+        return response.status(403).json({ error: 'ROLE_OVERRIDE_NOT_ALLOWED' });
+      }
       if (invalidMemo(request.body, true)) {
         return response.status(400).json({ error: 'INVALID_MEMO' });
       }
@@ -194,6 +202,9 @@ export function createLearningMemosHandler({
     if (request.method === 'PUT') {
       if (hasOwnerOverride(request.body)) {
         return response.status(403).json({ error: 'OWNER_ID_NOT_ALLOWED' });
+      }
+      if (hasRoleOverride(request.body)) {
+        return response.status(403).json({ error: 'ROLE_OVERRIDE_NOT_ALLOWED' });
       }
       if (invalidMemo(request.body, false)) {
         return response.status(400).json({ error: 'INVALID_MEMO' });
