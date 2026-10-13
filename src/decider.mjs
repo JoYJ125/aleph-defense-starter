@@ -5,13 +5,12 @@ export const RULE_IDS = Object.freeze(['device_registered', 'step_up_required'])
 
 export async function decide(request) {
   // 클라이언트 위조 헤더나 비어 있는 정보가 신뢰 정보로 승격되지 않도록 엔진 검증 출처를 구분합니다.
-  // 출처가 엔진(judge_fixture)으로 검증된 경우에만 인정하고, 출처가 없거나 불명확한 경우 임의의 기본/정상값으로 보정하지 않습니다.
-  const hasVerifiedSignalSource = request?.signals && typeof request.signals === 'object'
-    && request.signals.source === 'judge_fixture';
+  // 출처가 없거나 'none'인 경우 불명확한 출처로 보며, 임의의 기본/정상값으로 보정하지 않습니다.
+  const source = request?.signals?.source;
+  const hasVerifiedSignalSource = typeof source === 'string' && source !== 'none' && source.length > 0;
 
   const verifiedSignals = hasVerifiedSignalSource ? {
-    source: request.signals.source,
-    region: typeof request.signals.region === 'string' ? request.signals.region : null,
+    source,
     network: typeof request.signals.network === 'string' ? request.signals.network : null,
     hour: typeof request.signals.hour === 'number' ? request.signals.hour : null,
   } : null;
@@ -32,7 +31,8 @@ export async function decide(request) {
     };
   }
 
-  // 2. 검증된 신호와 행동을 바탕으로 복합 이상 접속 판정 (임의 보정 없이 검증된 값만 평가)
+  // 2. 검증된 신호와 행동을 바탕으로 복합 이상 접속 판정
+  // 브라우저가 보낸 위치(region)는 근거로 쓰지 않으며, 시각·네트워크·대량 자료 조회의 복합 이상만 판정합니다.
   const isSuspicious = verifiedSignals
     && typeof verifiedSignals.hour === 'number'
     && (verifiedSignals.hour < 6 || verifiedSignals.hour > 22)
