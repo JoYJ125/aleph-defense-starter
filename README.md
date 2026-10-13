@@ -2,17 +2,7 @@
 
 이 저장소는 1단계에서 학생 본인이 GitHub 저장소와 Vercel 배포를 만드는 출발점입니다. 실제 학생 자료, 토큰, 비밀키를 넣지 마세요.
 
-## 현재 저장점: 8단계 기능 포함 (2026-10-13)
-
-- SDP 판정기(`src/decider.mjs`)에 자원별 구역 접근을 통제하는 `zone_rules` 규칙을 추가했습니다.
-  - 내 자료실 메모(`notes`)와 강사 공지(`notices`) 구역을 구분하고, 알 수 없는 서비스나 경로 요청은 `route_not_allowed`로 차단합니다.
-  - `:id` 위치나 경로에 `export` 등 기능 경로를 두지 못하게 하여 `route_not_allowed`로 차단합니다.
-  - 공지 수정(`POST`, `PUT`, `DELETE`, `PATCH`)은 강사 권한(`instructor`/`teacher`/`admin`)만 허용하며 일반 학생 요청은 `zone_not_allowed`로 거부합니다.
-  - 메모 구역에서는 사용자 본인의 메모만 읽기·수정을 허용하고, 타인의 메모 접근은 `zone_not_allowed`로 차단합니다.
-- 자료 API(`api/learning-memos.js`)에서도 요청 본문이나 클라이언트의 임의 역할 조작(`role`, `is_instructor` 등)을 감지해 `ROLE_OVERRIDE_NOT_ALLOWED`로 거부하며, 검증된 사용자 ID와 DB의 `owner_id`만을 대조합니다.
-- 이전 6단계 기기 등록(`device_registered`) 및 7단계 복합 이상 접속 재인증(`step_up_required`) 규칙을 함께 유지합니다.
-
-## 이전 저장점: 7단계 기능 포함 (2026-10-13)
+## 현재 저장점: 7단계 기능 포함 (2026-10-13)
 
 - SDP 판정기(`src/decider.mjs`)에 등록된 기기 검증(`device_registered`)과 함께 평소와 다른 복합 이상 접속에 추가 본인 확인을 요청하는 `step_up_required` 규칙을 구현했습니다.
 - 검증된 엔진 신호(`source !== 'none'`)를 바탕으로 심야/새벽 시간대, 낯선 네트워크, 대량 읽기 사건이 결합된 요청에 대해 재인증(`stepUp`)이 없으면 `decision: 'step_up'`, `reasonCode: 'step_up_required'`를 반환합니다.
