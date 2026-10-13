@@ -55,10 +55,11 @@ export async function decide(request) {
     }
   }
 
-  // 3. 구역 규칙 (8단계): 정확한 경로와 자원 검증, 기능 경로 거부, 소유자 격리 및 공지 수정 권한 통제
+  // 3. 구역 규칙 (8단계): 공지·강사 자료 쓰기 전면 거부, 메모 전체 목록 경로 거부, 기능 경로 거부
   const pathStr = typeof request?.path === 'string' ? request.path.trim() : '';
   const segments = pathStr.split('/').filter(Boolean);
   const service = typeof request?.service === 'string' ? request.service.trim() : '';
+  const route = typeof request?.route === 'string' ? request.route.trim() : '';
 
   // 3-1. :id 위치 또는 경로에 export 등 기능 경로가 오면 거부 (쿼리/기능 경로 배제)
   const FUNCTIONAL_KEYWORDS = new Set(['export', 'import', 'download', 'upload', 'action', 'actions']);
@@ -88,14 +89,10 @@ export async function decide(request) {
     };
   }
 
-  const subject = typeof request?.subjectId === 'string' ? request.subjectId : '';
-
-  // 3-3. 공지 구역: 강사 공지 수정은 허용, 일반 학생의 공지 수정(POST/PUT/DELETE/PATCH)은 거부
+  // 3-3. 공지/강사 자료 구역: 요청 계약에는 역할이 없으므로 쓰기(POST·PUT·PATCH·DELETE)는 누구에게나 거부
   if (isNoticesService) {
     const isModify = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(request?.method);
-    const isInstructor = subject.includes('instructor') || subject.includes('teacher') || subject.includes('admin');
-
-    if (isModify && !isInstructor) {
+    if (isModify) {
       return {
         schema: 'aleph.decision.v1',
         requestId: request.requestId,
@@ -106,30 +103,14 @@ export async function decide(request) {
     }
   }
 
-  // 3-4. 메모 구역: A의 자기 메모 읽기·수정은 허용, B의 A 메모 읽기·수정은 거부 (자원 소유권 격리)
+  // 3-4. 메모 구역: 메모 전체 목록처럼 여러 사람의 자료를 한꺼번에 여는 경로 거부
+  // route 또는 path가 단건(:id)이 아닌 전체 목록(예: 'GET /notes', 'GET /api/learning-memos') 형태인 경우 거부
   if (isNotesService) {
-    let targetOwner = null;
-    if (segments[0] === 'notes') {
-      if (segments.length >= 3) {
-        targetOwner = segments[1];
-      } else if (segments.length === 2) {
-        const candidate = segments[1];
-        if (candidate !== subject && (candidate === 'A' || candidate === 'B' || candidate.startsWith('learner_') || candidate.startsWith('user_') || candidate.startsWith('student_'))) {
-          targetOwner = candidate;
-        }
-      }
-    } else if (segments[0] === 'api' && segments[1] === 'learning-memos') {
-      if (segments.length >= 4) {
-        targetOwner = segments[2];
-      } else if (segments.length === 3) {
-        const candidate = segments[2];
-        if (candidate !== subject && (candidate === 'A' || candidate === 'B' || candidate.startsWith('learner_') || candidate.startsWith('user_') || candidate.startsWith('student_'))) {
-          targetOwner = candidate;
-        }
-      }
-    }
+    const isListRoute = route === 'GET /notes' || route === 'GET /api/learning-memos'
+      || (segments.length === 1 && segments[0] === 'notes')
+      || (segments.length === 2 && segments[0] === 'api' && segments[1] === 'learning-memos');
 
-    if (targetOwner && targetOwner !== subject) {
+    if (isListRoute) {
       return {
         schema: 'aleph.decision.v1',
         requestId: request.requestId,
