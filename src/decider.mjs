@@ -75,7 +75,7 @@ export async function decide(request) {
     };
   }
 
-  // 3-2. 공지 또는 강사 자료 구역 판별: 쓰기(POST·PUT·PATCH·DELETE)는 누구에게나 전면 거부
+  // 3-2. 공지 또는 강사 자료 구역 판별: 쓰기(POST·PUT·PATCH·DELETE)는 역할 불문 누구에게나 전면 거부
   const isNoticeOrInstructor = service.includes('notice') || service.includes('instructor')
     || service.includes('announcement') || service.includes('teacher') || service.includes('admin')
     || pathStr.includes('notice') || pathStr.includes('instructor')
@@ -103,17 +103,13 @@ export async function decide(request) {
 
   if (isNotes) {
     // 메모 전체 목록처럼 여러 사람의 자료를 한꺼번에 여는 경로 거부
-    // 1) route가 목록 형태(예: 'GET /notes', 'GET /api/learning-memos')인 경우 거부
-    // 2) path가 단건 ID 없이 목록 엔드포인트 자체이거나 all/list인 경우 거부
-    const isExactListRoute = route === 'GET /notes' || route === 'GET /api/learning-memos'
-      || route === 'GET /notes/' || route === 'GET /api/learning-memos/';
-    const isExactListPath = pathStr === '/notes' || pathStr === '/notes/'
-      || pathStr === '/api/learning-memos' || pathStr === '/api/learning-memos/'
-      || segments.length === 1 && segments[0] === 'notes'
-      || (segments.length === 2 && segments[0] === 'api' && segments[1] === 'learning-memos');
-    const isAllOrList = segments.includes('all') || segments.includes('list');
+    // 단건(:id, :memoId) 조회가 아닌 목록 조회는 판정기에서 무조건 거부
+    const isSingleItem = route.includes(':id') || route.includes(':memoId')
+      || (segments[0] === 'notes' && segments.length >= 2 && !['all', 'list', 'export'].includes(segments[1]))
+      || (segments[0] === 'api' && segments[1] === 'learning-memos' && segments.length >= 3 && !['all', 'list', 'export'].includes(segments[2]))
+      || (segments[0] === 'api' && segments[1] === 'notes' && segments.length >= 3 && !['all', 'list', 'export'].includes(segments[2]));
 
-    if (method === 'GET' && (isExactListRoute || isExactListPath || isAllOrList || !route.includes(':id') && !route.includes(':memoId'))) {
+    if (method === 'GET' && !isSingleItem) {
       return {
         schema: 'aleph.decision.v1',
         requestId: request.requestId,
