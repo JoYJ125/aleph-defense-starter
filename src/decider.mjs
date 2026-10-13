@@ -4,21 +4,22 @@
 export const RULE_IDS = Object.freeze(['device_registered', 'step_up_required']);
 
 export async function decide(request) {
-  // 클라이언트 위조 헤더나 비어 있는 정보가 신뢰 정보로 승격되지 않도록 엔진 검증 출처를 구분합니다.
-  // 출처가 없거나 'none'인 경우 불명확한 출처로 보며, 임의의 정상값으로 채우지 않습니다.
-  const source = request?.signals?.source;
-  const hasVerifiedSignalSource = typeof source === 'string' && source !== 'none' && source.length > 0;
+  // 클라이언트 위조 헤더나 임의의 속성이 신뢰하는 접속 정보로 승격되지 않도록 엔진 검증 출처를 구분합니다.
+  // 출처가 없거나, 'none'이거나, 유효하지 않은 경우 접속 정보를 신뢰하지 않으며 임의의 정상값으로 채우지 않습니다.
+  const source = typeof request?.signals?.source === 'string' ? request.signals.source : null;
+  const isVerifiedSignalSource = source !== null && source !== 'none' && source !== 'unknown' && source.length > 0;
 
-  const verifiedSignals = hasVerifiedSignalSource ? {
+  const verifiedSignals = isVerifiedSignalSource ? {
     source,
     region: typeof request.signals.region === 'string' ? request.signals.region : null,
     network: typeof request.signals.network === 'string' ? request.signals.network : null,
-    hour: typeof request.signals.hour === 'number' ? request.signals.hour : null,
+    hour: typeof request.signals.hour === 'number' && Number.isInteger(request.signals.hour)
+      && request.signals.hour >= 0 && request.signals.hour <= 23 ? request.signals.hour : null,
   } : null;
 
-  // 행동(recentEvents)이 배열이 아니거나 비어 있으면 그대로 두고 임의의 정상 사건으로 채우지 않습니다.
+  // 행동(recentEvents)이 없거나 유효하지 않으면 임의의 정상값으로 채우지 않고 빈 배열로 둡니다.
   const verifiedRecentEvents = Array.isArray(request?.recentEvents)
-    ? request.recentEvents.filter(ev => ev && typeof ev === 'object' && typeof ev.count === 'number')
+    ? request.recentEvents.filter(ev => ev && typeof ev === 'object' && typeof ev.kind === 'string' && typeof ev.count === 'number')
     : [];
 
   // 1. 기기 미등록 시 거부
