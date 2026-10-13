@@ -56,13 +56,12 @@ export async function decide(request) {
     }
   }
 
-  // 3. 구역 규칙 (8단계): 공지 쓰기 전면 거부, 메모 전체 목록 거부, 기능 경로 거부, 타인 메모 격리
+  // 3. 구역 규칙 (8단계): 공지·강사 자료 쓰기 전면 거부, 메모 전체 목록 경로 거부, 기능 경로 거부
   const pathStr = typeof request?.path === 'string' ? request.path.trim() : '';
   const segments = pathStr.split('/').filter(Boolean);
-  const service = typeof request?.service === 'string' ? request.service.trim() : '';
+  const service = typeof request?.service === 'string' ? request.service.trim().toLowerCase() : '';
   const route = typeof request?.route === 'string' ? request.route.trim() : '';
-  const method = typeof request?.method === 'string' ? request.method.toUpperCase() : '';
-  const subject = typeof request?.subjectId === 'string' ? request.subjectId : '';
+  const method = typeof request?.method === 'string' ? request.method.trim().toUpperCase() : '';
 
   // 3-1. :id 위치 또는 경로에 export 등 기능 경로가 오면 거부
   const FUNCTIONAL_KEYWORDS = new Set(['export', 'import', 'download', 'upload', 'action', 'actions']);
@@ -76,16 +75,15 @@ export async function decide(request) {
     };
   }
 
-  // 3-2. 공지 또는 강사 자료 구역 판별
-  const isNoticeOrInstructor = service === 'notices' || service.includes('notice') || service.includes('announcement')
-    || service.includes('instructor') || service.includes('teacher') || service.includes('admin')
-    || segments[0] === 'notices' || segments[0] === 'notice'
-    || (segments[0] === 'api' && segments[1] === 'notices')
+  // 3-2. 공지 또는 강사 자료 구역 판별: 쓰기(POST·PUT·PATCH·DELETE)는 누구에게나 전면 거부
+  const isNoticeOrInstructor = service.includes('notice') || service.includes('instructor')
+    || service.includes('announcement') || service.includes('teacher') || service.includes('admin')
     || pathStr.includes('notice') || pathStr.includes('instructor')
-    || route.includes('notice') || route.includes('instructor');
+    || pathStr.includes('announcement') || pathStr.includes('teacher') || pathStr.includes('admin')
+    || route.includes('notice') || route.includes('instructor')
+    || route.includes('announcement') || route.includes('teacher') || route.includes('admin');
 
   if (isNoticeOrInstructor) {
-    // 요청 계약에는 역할이 없으므로 판정기는 공지/강사 자료 쓰기(POST·PUT·PATCH·DELETE)를 누구에게나 거부
     if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
       return {
         schema: 'aleph.decision.v1',
@@ -104,32 +102,18 @@ export async function decide(request) {
     || route.includes('/notes') || route.includes('/learning-memos');
 
   if (isNotes) {
-    // 메모 전체 목록처럼 여러 사람의 자료를 한꺼번에 여는 경로 거부 (단건만 허용)
-    if (method === 'GET') {
-      const isSingleItem = route.includes(':id')
-        || (segments[0] === 'notes' && segments.length >= 2 && !['all', 'list', 'export'].includes(segments[1]))
-        || (segments[0] === 'api' && segments[1] === 'learning-memos' && segments.length >= 3 && !['all', 'list', 'export'].includes(segments[2]))
-        || (segments[0] === 'api' && segments[1] === 'notes' && segments.length >= 3 && !['all', 'list', 'export'].includes(segments[2]));
+    // 메모 전체 목록처럼 여러 사람의 자료를 한꺼번에 여는 경로 거부
+    // 1) route가 목록 형태(예: 'GET /notes', 'GET /api/learning-memos')인 경우 거부
+    // 2) path가 단건 ID 없이 목록 엔드포인트 자체이거나 all/list인 경우 거부
+    const isExactListRoute = route === 'GET /notes' || route === 'GET /api/learning-memos'
+      || route === 'GET /notes/' || route === 'GET /api/learning-memos/';
+    const isExactListPath = pathStr === '/notes' || pathStr === '/notes/'
+      || pathStr === '/api/learning-memos' || pathStr === '/api/learning-memos/'
+      || segments.length === 1 && segments[0] === 'notes'
+      || (segments.length === 2 && segments[0] === 'api' && segments[1] === 'learning-memos');
+    const isAllOrList = segments.includes('all') || segments.includes('list');
 
-      if (!isSingleItem) {
-        return {
-          schema: 'aleph.decision.v1',
-          requestId: request.requestId,
-          decision: 'deny',
-          reasonCode: 'zone_not_allowed',
-          ruleIds: ['zone_rules'],
-        };
-      }
-    }
-
-    // 경로에 타 사용자의 식별자가 명시된 경우(B가 A의 메모 경로에 접근 시) 거부
-    let explicitOwner = null;
-    if (segments[0] === 'notes' && segments.length >= 3) {
-      explicitOwner = segments[1];
-    } else if (segments[0] === 'api' && segments[1] === 'learning-memos' && segments.length >= 4) {
-      explicitOwner = segments[2];
-    }
-    if (explicitOwner && subject && explicitOwner !== subject) {
+    if (method === 'GET' && (isExactListRoute || isExactListPath || isAllOrList || !route.includes(':id') && !route.includes(':memoId'))) {
       return {
         schema: 'aleph.decision.v1',
         requestId: request.requestId,
