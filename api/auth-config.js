@@ -9,9 +9,10 @@ export default function handler(request, response) {
   }
 
   const provider = config.identityProvider;
+  const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY || provider?.publishableKey;
   if (typeof provider?.issuer !== 'string'
-      || typeof provider.publishableKey !== 'string'
-      || !provider.publishableKey.trim()) {
+      || typeof publishableKey !== 'string'
+      || !publishableKey.trim()) {
     return response.status(500).json({ error: 'AUTH_CONFIGURATION_ERROR' });
   }
 
@@ -25,5 +26,5 @@ export default function handler(request, response) {
     return response.status(500).json({ error: 'AUTH_CONFIGURATION_ERROR' });
   }
 
-  return response.status(200).json({ url: issuer.origin, publishableKey: provider.publishableKey });
+  return response.status(200).json({ url: issuer.origin, publishableKey });
 }
