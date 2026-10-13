@@ -74,15 +74,19 @@ export async function decide(request) {
     };
   }
 
-  // 3-2. 공지 또는 강사 자료 구역 판별: 쓰기(POST·PUT·PATCH·DELETE)는 역할 불문 누구에게나 전면 거부
-  const isNoticeOrInstructor = service.includes('notice') || service.includes('instructor')
-    || service.includes('announcement') || service.includes('teacher') || service.includes('admin')
-    || pathStr.includes('notice') || pathStr.includes('instructor')
-    || pathStr.includes('announcement') || pathStr.includes('teacher') || pathStr.includes('admin')
-    || route.includes('notice') || route.includes('instructor')
-    || route.includes('announcement') || route.includes('teacher') || route.includes('admin');
+  // 3-2. 자원 ID(Resource ID) 구분: 내 자료실 메모(notes) vs 강사 공지(notices)
+  // 서버가 요청마다 서로 다른 자원 ID로 구별할 수 있도록 식별합니다.
+  const isNoticeResource = service === 'notices' || service.includes('notice') || service.includes('announcement')
+    || segments[0] === 'notices' || segments[0] === 'notice'
+    || (segments[0] === 'api' && segments[1] === 'notices')
+    || route.includes('/notices') || route.includes('/notice');
 
-  if (isNoticeOrInstructor) {
+  const isInstructorResource = service.includes('instructor') || service.includes('teacher') || service.includes('admin')
+    || pathStr.includes('instructor') || pathStr.includes('teacher') || pathStr.includes('admin')
+    || route.includes('instructor') || route.includes('teacher') || route.includes('admin');
+
+  // 강사 공지나 강사 자료 구역은 쓰기(POST·PUT·PATCH·DELETE)를 누구에게나 전면 거부
+  if (isNoticeResource || isInstructorResource) {
     if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
       return {
         schema: 'aleph.decision.v1',
@@ -94,15 +98,15 @@ export async function decide(request) {
     }
   }
 
-  // 3-3. 메모 구역 판별
-  const isNotes = service === 'notes' || service === 'memos' || service === 'learning-memos'
+  // 3-3. 내 자료실 메모 자원 ID (notes)
+  const isNotesResource = service === 'notes' || service === 'memos' || service === 'learning-memos'
     || segments[0] === 'notes' || segments[0] === 'memos'
     || (segments[0] === 'api' && (segments[1] === 'learning-memos' || segments[1] === 'notes'))
     || route.includes('/notes') || route.includes('/learning-memos');
 
   // 3-4. 메모 구역: 메모 전체 목록처럼 여러 사람의 자료를 한꺼번에 여는 경로 거부 (단건만 허용)
   // route에 :id가 없거나, path가 단건 식별자를 포함하지 않는 목록 조회 요청은 거부
-  if (isNotes && method === 'GET') {
+  if (isNotesResource && method === 'GET') {
     const isSingleItem = route.includes(':id')
       || (segments[0] === 'notes' && segments.length >= 2 && !['all', 'list', 'export'].includes(segments[1]))
       || (segments[0] === 'api' && segments[1] === 'learning-memos' && segments.length >= 3 && !['all', 'list', 'export'].includes(segments[2]))
@@ -119,8 +123,8 @@ export async function decide(request) {
     }
   }
 
-  // 3-5. 알 수 없는 서비스 및 경로 거부
-  if (!isNotes && !isNoticeOrInstructor) {
+  // 3-5. 알 수 없는 자원 ID 및 경로 거부
+  if (!isNotesResource && !isNoticeResource && !isInstructorResource) {
     return {
       schema: 'aleph.decision.v1',
       requestId: request.requestId,
