@@ -1,7 +1,7 @@
 // ALEPH SDP 엔진이 확인한 요청만 받는 학생 판정기 시작점입니다.
 // 6단계부터 규칙을 하나씩 추가합니다. 이 기본 응답은 모든 요청을 거부합니다.
 // 요청 본문의 userId, role, 기기 키, 토큰을 별도로 믿거나 저장하지 마세요.
-export const RULE_IDS = Object.freeze(['device_registered', 'step_up_required']);
+export const RULE_IDS = Object.freeze(['device_registered', 'step_up_required', 'zone_rules']);
 
 export async function decide(request) {
   // 클라이언트 위조 헤더나 임의의 속성이 신뢰하는 접속 정보로 승격되지 않도록 엔진 검증 출처를 구분합니다.
@@ -22,7 +22,7 @@ export async function decide(request) {
     ? request.recentEvents.filter(ev => ev && typeof ev === 'object' && typeof ev.kind === 'string' && typeof ev.count === 'number')
     : [];
 
-  // 1. 기기 미등록 시 거부
+  // 1. 기기 미등록 시 거부 (6단계 규칙)
   if (!request || request.deviceRegistered !== true) {
     return {
       schema: 'aleph.decision.v1',
@@ -33,8 +33,7 @@ export async function decide(request) {
     };
   }
 
-  // 2. 평소와 다른 시각 + 처음 보는 네트워크 + 갑자기 많은 자료 읽기의 복합 이상 사건 확인
-  // 지역(region) 하나만으로 영구 차단하지 않으며, 정해진 복합 이상 사건은 추가 확인(step_up)으로 보냅니다.
+  // 2. 평소와 다른 시각 + 처음 보는 네트워크 + 갑자기 많은 자료 읽기의 복합 이상 사건 확인 (7단계 규칙)
   const isSuspicious = verifiedSignals
     && typeof verifiedSignals.hour === 'number'
     && (verifiedSignals.hour < 6 || verifiedSignals.hour > 22)
@@ -57,11 +56,106 @@ export async function decide(request) {
     }
   }
 
+  // 3. 구역 규칙 (8단계): 공지 쓰기 전면 거부, 메모 전체 목록 거부, 기능 경로 거부, 타인 메모 격리
+  const pathStr = typeof request?.path === 'string' ? request.path.trim() : '';
+  const segments = pathStr.split('/').filter(Boolean);
+  const service = typeof request?.service === 'string' ? request.service.trim() : '';
+  const route = typeof request?.route === 'string' ? request.route.trim() : '';
+  const method = typeof request?.method === 'string' ? request.method.toUpperCase() : '';
+  const subject = typeof request?.subjectId === 'string' ? request.subjectId : '';
+
+  // 3-1. :id 위치 또는 경로에 export 등 기능 경로가 오면 거부
+  const FUNCTIONAL_KEYWORDS = new Set(['export', 'import', 'download', 'upload', 'action', 'actions']);
+  if (segments.some(seg => FUNCTIONAL_KEYWORDS.has(seg.toLowerCase())) || pathStr.includes('export')) {
+    return {
+      schema: 'aleph.decision.v1',
+      requestId: request.requestId,
+      decision: 'deny',
+      reasonCode: 'route_not_allowed',
+      ruleIds: ['zone_rules'],
+    };
+  }
+
+  // 3-2. 공지 또는 강사 자료 구역 판별
+  const isNoticeOrInstructor = service === 'notices' || service.includes('notice') || service.includes('announcement')
+    || service.includes('instructor') || service.includes('teacher') || service.includes('admin')
+    || segments[0] === 'notices' || segments[0] === 'notice'
+    || (segments[0] === 'api' && segments[1] === 'notices')
+    || pathStr.includes('notice') || pathStr.includes('instructor')
+    || route.includes('notice') || route.includes('instructor');
+
+  if (isNoticeOrInstructor) {
+    // 요청 계약에는 역할이 없으므로 판정기는 공지/강사 자료 쓰기(POST·PUT·PATCH·DELETE)를 누구에게나 거부
+    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+      return {
+        schema: 'aleph.decision.v1',
+        requestId: request.requestId,
+        decision: 'deny',
+        reasonCode: 'zone_not_allowed',
+        ruleIds: ['zone_rules'],
+      };
+    }
+  }
+
+  // 3-3. 메모 구역 판별
+  const isNotes = service === 'notes' || service === 'memos' || service === 'learning-memos'
+    || segments[0] === 'notes' || segments[0] === 'memos'
+    || (segments[0] === 'api' && (segments[1] === 'learning-memos' || segments[1] === 'notes'))
+    || route.includes('/notes') || route.includes('/learning-memos');
+
+  if (isNotes) {
+    // 메모 전체 목록처럼 여러 사람의 자료를 한꺼번에 여는 경로 거부 (단건만 허용)
+    if (method === 'GET') {
+      const isSingleItem = route.includes(':id')
+        || (segments[0] === 'notes' && segments.length >= 2 && !['all', 'list', 'export'].includes(segments[1]))
+        || (segments[0] === 'api' && segments[1] === 'learning-memos' && segments.length >= 3 && !['all', 'list', 'export'].includes(segments[2]))
+        || (segments[0] === 'api' && segments[1] === 'notes' && segments.length >= 3 && !['all', 'list', 'export'].includes(segments[2]));
+
+      if (!isSingleItem) {
+        return {
+          schema: 'aleph.decision.v1',
+          requestId: request.requestId,
+          decision: 'deny',
+          reasonCode: 'zone_not_allowed',
+          ruleIds: ['zone_rules'],
+        };
+      }
+    }
+
+    // 경로에 타 사용자의 식별자가 명시된 경우(B가 A의 메모 경로에 접근 시) 거부
+    let explicitOwner = null;
+    if (segments[0] === 'notes' && segments.length >= 3) {
+      explicitOwner = segments[1];
+    } else if (segments[0] === 'api' && segments[1] === 'learning-memos' && segments.length >= 4) {
+      explicitOwner = segments[2];
+    }
+    if (explicitOwner && subject && explicitOwner !== subject) {
+      return {
+        schema: 'aleph.decision.v1',
+        requestId: request.requestId,
+        decision: 'deny',
+        reasonCode: 'zone_not_allowed',
+        ruleIds: ['zone_rules'],
+      };
+    }
+  }
+
+  // 3-4. 알 수 없는 서비스 및 경로 거부
+  if (!isNotes && !isNoticeOrInstructor) {
+    return {
+      schema: 'aleph.decision.v1',
+      requestId: request.requestId,
+      decision: 'deny',
+      reasonCode: 'route_not_allowed',
+      ruleIds: ['zone_rules'],
+    };
+  }
+
   return {
     schema: 'aleph.decision.v1',
     requestId: request.requestId,
     decision: 'allow',
     reasonCode: 'approved',
-    ruleIds: ['device_registered'],
+    ruleIds: ['device_registered', 'zone_rules'],
   };
 }
