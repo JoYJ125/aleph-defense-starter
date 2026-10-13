@@ -60,10 +60,11 @@ export async function decide(request) {
   const segments = pathStr.split('/').filter(Boolean);
   const service = typeof request?.service === 'string' ? request.service.trim() : '';
   const route = typeof request?.route === 'string' ? request.route.trim() : '';
+  const method = typeof request?.method === 'string' ? request.method.toUpperCase() : '';
 
-  // 3-1. :id 위치 또는 경로에 export 등 기능 경로가 오면 거부 (쿼리/기능 경로 배제)
+  // 3-1. :id 위치 또는 경로에 export 등 기능 경로가 오면 거부
   const FUNCTIONAL_KEYWORDS = new Set(['export', 'import', 'download', 'upload', 'action', 'actions']);
-  if (segments.some(seg => FUNCTIONAL_KEYWORDS.has(seg.toLowerCase()))) {
+  if (segments.some(seg => FUNCTIONAL_KEYWORDS.has(seg.toLowerCase())) || pathStr.includes('export')) {
     return {
       schema: 'aleph.decision.v1',
       requestId: request.requestId,
@@ -73,26 +74,16 @@ export async function decide(request) {
     };
   }
 
-  // 3-2. 알 수 없는 서비스 및 경로 거부
-  const isNotesService = service === 'notes' || segments[0] === 'notes'
-    || (segments[0] === 'api' && segments[1] === 'learning-memos');
-  const isNoticesService = service === 'notices' || segments[0] === 'notices'
-    || (segments[0] === 'api' && segments[1] === 'notices');
+  // 3-2. 공지 또는 강사 자료 구역 판별: 쓰기(POST·PUT·PATCH·DELETE)는 역할 불문 누구에게나 전면 거부
+  const isNoticeOrInstructor = service.includes('notice') || service.includes('instructor')
+    || service.includes('announcement') || service.includes('teacher') || service.includes('admin')
+    || pathStr.includes('notice') || pathStr.includes('instructor')
+    || pathStr.includes('announcement') || pathStr.includes('teacher') || pathStr.includes('admin')
+    || route.includes('notice') || route.includes('instructor')
+    || route.includes('announcement') || route.includes('teacher') || route.includes('admin');
 
-  if (!isNotesService && !isNoticesService) {
-    return {
-      schema: 'aleph.decision.v1',
-      requestId: request.requestId,
-      decision: 'deny',
-      reasonCode: 'route_not_allowed',
-      ruleIds: ['zone_rules'],
-    };
-  }
-
-  // 3-3. 공지/강사 자료 구역: 요청 계약에는 역할이 없으므로 쓰기(POST·PUT·PATCH·DELETE)는 누구에게나 거부
-  if (isNoticesService) {
-    const isModify = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(request?.method);
-    if (isModify) {
+  if (isNoticeOrInstructor) {
+    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
       return {
         schema: 'aleph.decision.v1',
         requestId: request.requestId,
@@ -103,14 +94,21 @@ export async function decide(request) {
     }
   }
 
-  // 3-4. 메모 구역: 메모 전체 목록처럼 여러 사람의 자료를 한꺼번에 여는 경로 거부
-  // route 또는 path가 단건(:id)이 아닌 전체 목록(예: 'GET /notes', 'GET /api/learning-memos') 형태인 경우 거부
-  if (isNotesService) {
-    const isListRoute = route === 'GET /notes' || route === 'GET /api/learning-memos'
-      || (segments.length === 1 && segments[0] === 'notes')
-      || (segments.length === 2 && segments[0] === 'api' && segments[1] === 'learning-memos');
+  // 3-3. 메모 구역 판별
+  const isNotes = service === 'notes' || service === 'memos' || service === 'learning-memos'
+    || segments[0] === 'notes' || segments[0] === 'memos'
+    || (segments[0] === 'api' && (segments[1] === 'learning-memos' || segments[1] === 'notes'))
+    || route.includes('/notes') || route.includes('/learning-memos');
 
-    if (isListRoute) {
+  // 3-4. 메모 구역: 메모 전체 목록처럼 여러 사람의 자료를 한꺼번에 여는 경로 거부 (단건만 허용)
+  // route에 :id가 없거나, path가 단건 식별자를 포함하지 않는 목록 조회 요청은 거부
+  if (isNotes && method === 'GET') {
+    const isSingleItem = route.includes(':id')
+      || (segments[0] === 'notes' && segments.length >= 2 && !['all', 'list', 'export'].includes(segments[1]))
+      || (segments[0] === 'api' && segments[1] === 'learning-memos' && segments.length >= 3 && !['all', 'list', 'export'].includes(segments[2]))
+      || (segments[0] === 'api' && segments[1] === 'notes' && segments.length >= 3 && !['all', 'list', 'export'].includes(segments[2]));
+
+    if (!isSingleItem) {
       return {
         schema: 'aleph.decision.v1',
         requestId: request.requestId,
@@ -119,6 +117,17 @@ export async function decide(request) {
         ruleIds: ['zone_rules'],
       };
     }
+  }
+
+  // 3-5. 알 수 없는 서비스 및 경로 거부
+  if (!isNotes && !isNoticeOrInstructor) {
+    return {
+      schema: 'aleph.decision.v1',
+      requestId: request.requestId,
+      decision: 'deny',
+      reasonCode: 'route_not_allowed',
+      ruleIds: ['zone_rules'],
+    };
   }
 
   return {
