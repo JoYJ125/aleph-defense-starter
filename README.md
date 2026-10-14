@@ -143,3 +143,9 @@ node --test test/policy-restore-preview.test.mjs test/restore-test-policy.test.m
 ```
 
 **주의:** 이 명령만으로 B의 복구된 DB 메모·A/B 접근 격리·감사 기록 보존·Production 동작이 검증되지는 않습니다. 해당 항목은 실제 시험 환경의 관측 결과가 필요합니다.
+
+### 10단계 복구 안전 확인 절차 (S10_BACKUP_UNVERIFIED 보완)
+
+- Preview 시험 계정 B에서 먼저 `GET /api/test-restore/:id`를 호출합니다. 서버가 비공개 서명 사본을 검증하고 복구 버전·변경될 필드·확인 토큰만 반환합니다. 이때 DB는 수정하지 않습니다.
+- 확인 후 `POST /api/test-restore/:id`에 `{"confirmationToken":"<미리보기 확인 토큰>"}`을 보냅니다. 서버는 서명·시각·소유자·해시를 재검증하고 현재 메모 상태를 대조한 뒤 B의 기존 한 건만 복원합니다. 토큰 누락은 HTTP 428, 불일치·사본 검증 실패는 거부합니다.
+- 운영 정책·다른 메모·감사 기록은 수정하지 않습니다. 실제 심판 재시험은 **미실행**입니다. 로컬 테스트 명령: `node --test test/restore-one-test-memo.test.mjs` (**미실행**).

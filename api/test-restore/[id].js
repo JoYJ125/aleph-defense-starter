@@ -1,13 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 import config from '../../aleph.config.json' with { type: 'json' };
 import { createLoginVerifier } from '../../src/verify-login.mjs';
-import { restoreOneTestMemo } from '../../src/restore-one-test-memo.mjs';
+import { previewOneTestMemo, restoreOneTestMemo } from '../../src/restore-one-test-memo.mjs';
 
 // Disabled on production by design; snapshots and trust anchors are server-only.
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('Allow', 'POST');
-  if (req.method !== 'POST') return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
+  res.setHeader('Allow', 'GET, POST');
+  if (req.method !== 'POST' && req.method !== 'GET') return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
   if (process.env.VERCEL_ENV !== 'preview' || process.env.TEST_MEMO_RESTORE_ENABLED !== 'true')
     return res.status(403).json({ error: 'TEST_RESTORE_DISABLED' });
   const owner = process.env.TEST_ACCOUNT_B_USER_ID;
@@ -30,15 +30,20 @@ export default async function handler(req, res) {
     const identity = await createLoginVerifier({ config, supabaseSecretKey: secret })(auth);
     if (identity?.kind !== 'student' || identity.userId !== owner)
       return res.status(403).json({ error: 'TEST_ACCOUNT_B_ONLY' });
-    // Never accept snapshot content, owner or id from POST body.
-    if (req.body && Object.keys(req.body).length)
+    const body = req.body ?? {};
+    if (typeof body !== 'object' || Array.isArray(body)
+        || Object.keys(body).some(key => key !== 'confirmationToken'))
       return res.status(400).json({ error: 'BODY_NOT_ALLOWED' });
     const db = createClient(url, secret, { auth: { persistSession: false, autoRefreshToken: false } });
-    const result = await restoreOneTestMemo({ db, snapshot: JSON.parse(snapshotText),
-      trustedPublicKey: publicKey, incidentAt, expectedOwner: owner, requestedId: id });
+    const args = { db, snapshot: JSON.parse(snapshotText),
+      trustedPublicKey: publicKey, incidentAt, expectedOwner: owner, requestedId: id };
+    if (req.method === 'GET') return res.status(200).json(await previewOneTestMemo(args));
+    if (typeof body.confirmationToken !== 'string')
+      return res.status(428).json({ error: 'RESTORE_PREVIEW_REQUIRED' });
+    const result = await restoreOneTestMemo({ ...args, confirmationToken: body.confirmationToken });
     return res.status(200).json(result);
   } catch (error) {
-    const invalid = /SNAPSHOT|MEMO_NOT_FOUND|RESTORE_VERIFICATION/.test(error.message);
+    const invalid = /SNAPSHOT|MEMO_NOT_FOUND|RESTORE_VERIFICATION|RESTORE_CONFIRMATION/.test(error.message);
     return res.status(invalid ? 409 : 502).json({ error: invalid ? 'RESTORE_ABORTED' : 'RESTORE_UNAVAILABLE' });
   }
 }

@@ -32,11 +32,34 @@ export function verifyPrivateMemoSnapshot({ snapshot, trustedPublicKey, incident
   return payload;
 }
 
+export async function previewOneTestMemo({ db, ...args }) {
+  const payload = verifyPrivateMemoSnapshot(args);
+  const { data: row, error } = await db.from('learning_memos')
+    .select('id,owner_id,title,content').eq('id', args.requestedId)
+    .eq('owner_id', args.expectedOwner).maybeSingle();
+  if (error) throw new Error('MEMO_READ_FAILED');
+  if (!row || row.id !== payload.id || row.owner_id !== payload.owner_id)
+    throw new Error('MEMO_NOT_FOUND_OR_NOT_OWNED');
+  const changeFields = ['title', 'content'].filter(k => row[k] !== payload[k]);
+  const confirmationToken = sha256(JSON.stringify({
+    version: payload.version, id: payload.id, owner_id: payload.owner_id,
+    snapshotHash: payload.contentSha256, beforeTitle: row.title,
+    beforeHash: sha256(row.content), changeFields,
+  }));
+  return { mode: 'preview_only', version: payload.version,
+    verifiedAt: payload.verifiedAt, id: payload.id, owner_id: payload.owner_id,
+    changeFields, confirmationToken };
+}
+
 // A single existing B-owned row is updated. No INSERT/UPSERT or audit operations.
 export async function restoreOneTestMemo({ db, snapshot, trustedPublicKey, incidentAt,
-  expectedOwner, requestedId }) {
-  const payload = verifyPrivateMemoSnapshot({ snapshot, trustedPublicKey, incidentAt,
-    expectedOwner, requestedId });
+  expectedOwner, requestedId, confirmationToken }) {
+  const args = { snapshot, trustedPublicKey, incidentAt, expectedOwner, requestedId };
+  const preview = await previewOneTestMemo({ db, ...args });
+  if (typeof confirmationToken !== 'string'
+      || !equalHash(confirmationToken, preview.confirmationToken))
+    throw new Error('RESTORE_CONFIRMATION_REQUIRED');
+  const payload = verifyPrivateMemoSnapshot(args);
   const { data: before, error: readError } = await db.from('learning_memos')
     .select('id,owner_id,title,content').eq('id', requestedId)
     .eq('owner_id', expectedOwner).maybeSingle();

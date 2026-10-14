@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
-import { verifyPrivateMemoSnapshot, restoreOneTestMemo } from '../src/restore-one-test-memo.mjs';
+import { verifyPrivateMemoSnapshot, previewOneTestMemo, restoreOneTestMemo } from '../src/restore-one-test-memo.mjs';
 const { privateKey, publicKey } = generateKeyPairSync('ed25519');
 const id = '11111111-1111-4111-8111-111111111111';
 const owner = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -29,7 +29,12 @@ test('B single memo restore matches ID, owner, content hash; other rows/audit un
       } };
     return query;
   } };
-  const result = await restoreOneTestMemo({ db, ...args });
+  const preview = await previewOneTestMemo({ db, ...args });
+  assert.equal(preview.version, payload.version);
+  assert.deepEqual(preview.changeFields, ['title', 'content']);
+  await assert.rejects(restoreOneTestMemo({ db, ...args }), /RESTORE_CONFIRMATION_REQUIRED/);
+  assert.equal(rows[0].content, 'tampered');
+  const result = await restoreOneTestMemo({ db, ...args, confirmationToken: preview.confirmationToken });
   assert.equal(result.id, id); assert.equal(result.owner_id, owner);
   assert.equal(result.contentSha256, hash);
   assert.equal(rows[1].content, 'keep');
