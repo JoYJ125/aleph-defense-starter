@@ -109,6 +109,7 @@
     let serverDeviceApproved = false;
     async function checkDeviceApproval(session) {
       serverDeviceApproved = false;
+      ++memoRequestId;
       protectedMemoForm.hidden = true;
       protectedNotes.replaceChildren(Object.assign(document.createElement('li'), {
         textContent: '기기 승인 확인 전에는 보호 자료를 표시하지 않습니다.',
@@ -277,18 +278,26 @@
       try {
         const notes = await requestMemoApi('/api/learning-memos', { session });
         if (!Array.isArray(notes)) throw new Error('자료 형식이 맞지 않습니다.');
-        if (requestId === memoRequestId && hasSessionCredentials(currentSession)) renderMemos(notes);
+        if (requestId === memoRequestId && serverDeviceApproved
+            && hasSessionCredentials(currentSession)
+            && currentSession.access_token === session.access_token) renderMemos(notes);
       } catch (error) {
         if (requestId === memoRequestId) showMemoMessage(error.message);
       }
     }
 
     function renderSession(session) {
+      // Clear any previous user's protected view before changing authentication state.
+      ++memoRequestId;
+      serverDeviceApproved = false;
+      showMemoMessage('기기 승인 확인 전에는 보호 자료를 표시하지 않습니다.');
+      resetMemoForm();
+      memoStatus.textContent = '';
       currentSession = session;
       const isSignedIn = hasSessionCredentials(session);
       loginForm.hidden = isSignedIn;
       signedIn.hidden = !isSignedIn;
-      memoForm.hidden = !isSignedIn || !serverDeviceApproved;
+      memoForm.hidden = true;
       void checkDeviceApproval(session);
       if (isSignedIn) {
         signedInUser.textContent = `${session.user.email || '계정'}으로 로그인되어 있습니다.`;
