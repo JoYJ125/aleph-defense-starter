@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "2.117.2",
-    "jose": "6.2.12"
+    "jose": "6.2.12",
+    "@simplewebauthn/server": "13.2.2"
   }
 }

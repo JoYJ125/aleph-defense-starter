@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { verifyDeviceProof } from '../src/device-proof.mjs';
 import { createClient } from '@supabase/supabase-js';
 import config from '../aleph.config.json' with { type: 'json' };
 import { createLoginVerifier } from '../src/verify-login.mjs';
@@ -136,16 +137,14 @@ export function createLearningMemosHandler({
     return response.status(401).json({ error: 'UNAUTHORIZED' });
   }
 
-  // Stage 11: no trusted device attestation/registration API is provided yet.
-  // Fail closed on student memo requests; never trust browser-supplied approval.
-  if (identity.kind === 'student') {
-    return response.status(403).json({ error: 'DEVICE_APPROVAL_NOT_VERIFIED' });
-  }
-
-  try {
+try {
     const supabase = createSupabaseClient(supabaseUrl, secretKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
+
+    if (!await verifyDeviceProof(supabase, identity.userId, request.headers?.['x-device-proof'])) {
+      return response.status(403).json({ error: 'DEVICE_APPROVAL_NOT_VERIFIED' });
+    }
 
     if (!hasId && request.method === 'GET') {
       // Provision the four virtual starter memos once per verified user.
