@@ -2,6 +2,48 @@
 
 이 저장소는 1단계에서 학생 본인이 GitHub 저장소와 Vercel 배포를 만드는 출발점입니다. 실제 학생 자료, 토큰, 비밀키를 넣지 마세요.
 
+## 12단계 재현 안내 — 검사 기준 커밋 `8eca6275b096ba6f34196852f5f3528251165c71` (2026-10-14)
+
+이 안내는 위 커밋의 **저장소 코드 상태**를 기준으로 작성했다. 운영 배포 성공, 41종 시험 통과, 실제 기기 회수·복구 실행은 확인하지 않았다. 기존 README의 11단계 과거 기록은 당시 이력으로 보존한다.
+
+### 구성 요소와 출처
+
+| 구성 | 학생 저장소 구현 | 외부 제공·운영 주체 |
+|---|---|---|
+| 접속 판정 | `src/decider.mjs`의 `decide(request)`, `RULE_IDS` 3종: `device_registered`, `step_up_required`, `zone_rules` | **ALEPH SDP 엔진 사용**. 엔진이 요청과 검증된 신호를 전달하며, 엔진 자체는 이 저장소에 포함하지 않음 |
+| 탐지 | `src/detect.mjs`의 `detect(events)`, `proposeRevocation(request)` (이상 징후 감지·회수 제안) | 사건 전달 및 실제 세션 회수는 제공 엔진·운영 환경 책임. 학생 코드만으로 회수되지 않음 |
+| 접속 앱 | `public/index.html`, `public/manifest.webmanifest`, `api/device-approval.js`, `src/device-proof.mjs` | 브라우저 WebAuthn 인증 장치, Vercel 배포, Supabase Auth·DB 사용 |
+| 자료실 | `api/learning-memos.js`, `api/learning-memos/[id].js`, `api/auth-config.js` | Supabase 인증·저장소 및 Vercel 서버 함수 사용 |
+| 탈환 작전실 | `api/operation-room.js`, `docs/STAGE12_VERIFICATION_PROCEDURE.md` | 서버 코드에서 판정기 규칙을 읽음. 운영 사건·회수·복구 실측 연동은 미구현 |
+
+**출처 구분:** ALEPH SDP 엔진은 제공 엔진이며 학생이 구현하거나 이 저장소에 배포한 엔진이라고 주장하지 않는다. 학생의 판정기·탐지 함수와 웹앱·자료실 API만 이 저장소의 작업물이다.
+
+### 설치 및 재현 순서
+
+1. Node.js **22 이상**과 Git을 준비한다. 검사한 버전을 재현하려면 `git clone https://github.com/JoYJ125/aleph-defense-starter.git` 후 `cd aleph-defense-starter`, `git checkout 8eca6275b096ba6f34196852f5f3528251165c71` 순서로 이동한다. 다른 로컬 변경이 있으면 먼저 `git status --short`로 확인하고 덮어쓰지 않는다.
+2. `npm ci`로 의존성을 설치한다. 현재 `package.json`과 `package-lock.json`의 일치 여부는 미검증이다. 설치 오류가 나면 첫 오류를 기록하고 실행을 중단한다. `npm ci`는 잠금 파일이 일치하지 않으면 실패하며 임의로 수정하지 않는다.
+3. `npm run decider:test`, `npm run fixture:7`, `npm run detect:test`를 실행해 **가상 요청**의 정책·탐지 결과를 확인한다. 이 결과는 ALEPH 운영 엔진 또는 심판의 실제 판정이 아니다.
+4. `npm run test:package`, `npm run test:r5`로 기존 계약 회귀 시험을 실행한다. 11단계 변경으로 기존 R5 기대와 달라질 수 있으므로 실패도 그대로 기록한다.
+5. 정적 웹앱은 `npm run build -- --local`로 빌드할 수 있다. **정적 빌드만으로 서버 API는 실행되지 않는다.** 접속 앱·자료실의 실제 API 동작은 Vercel 프로젝트의 서버 함수 배포와 Supabase 연결이 필요하다. 운영 주소는 `aleph.config.json`의 `publicAppUrl`에서 확인한다.
+6. Vercel 환경 설정에는 Supabase 연결에 필요한 서버 전용 값(`SUPABASE_URL`, `SUPABASE_SECRET_KEY`)을 **Vercel의 비밀 환경변수 입력란**으로만 등록한다. 실제 값은 README, 소스, Git, 제출 묶음에 넣지 않는다. 브라우저에 서버 비밀키를 전달하지 않는다. 추가 복구 시험 변수는 기존 10단계 문서의 Preview 제한을 따른다.
+7. 배포 후 공개 화면·manifest·`GET /api/operation-room`의 HTTP 결과를 확인하고, 로그인 전 메모 요청 거부, 유효한 로그인+기기 서명 전 거부, 검증 후 본인 자료 허용을 **실제 응답**으로 별도 기록한다. 1~11단계 41종 대조 표의 양식과 미실행 규칙은 `docs/STAGE12_VERIFICATION_PROCEDURE.md`를 따른다. 메모 본문·토큰·개인키는 기록하지 않는다.
+
+### 실행·중지·복구
+
+- **실행:** 로컬에서는 위 가상 판정·탐지 테스트를 명령별로 실행하고 종료한다. 웹앱은 배포된 `publicAppUrl`을 브라우저에서 연다. PWA 설치는 선택 사항이며 설치 표시만으로 기기 승인을 인정하지 않는다.
+- **중지:** 로컬에서 실행 중인 테스트/개발 명령은 해당 터미널의 `Ctrl+C`로 중지한다. 브라우저에서는 로그아웃 후 탭을 닫는다. 이는 **운영 서버 중지·기기 권한 회수와 다르다**. 운영 배포를 중지하려면 Vercel 프로젝트 관리 권한으로 배포·접근 설정을 별도로 관리한다.
+- **복구:** 코드를 되돌리기 전에 `git status --short`와 `git diff`로 보존할 작업을 확인한다. `git reset --hard`를 사용하지 않는다. 필요하면 기존의 검증된 커밋에서 새 브랜치를 만들어 수정한다. 시험 가상 메모 한 건 복구는 기존 10단계의 **Preview 전용** `api/test-restore/[id].js`와 검증된 서명 사본을 사용하며, 필수 사본·검증 정보가 없으면 중단한다. Production DB 복구나 엔진 회수 상태 복구를 이 명령으로 수행했다고 주장하지 않는다.
+- **증거 기록:** 정상 요청 허용과 금지 요청 거부를 각각 실측하고 HTTP 코드·요청 ID·UTC 확인 시각을 기록한다. 기록이 없으면 '미실행'이다. 서버 기록은 민감정보를 가리고 대조한다.
+
+### 확인 상태 및 알려진 차이
+
+- 검사 커밋: `8eca6275b096ba6f34196852f5f3528251165c71`; README의 기존 최상단 11단계 문구는 이후 WebAuthn 추가 이전의 이력이다.
+- `aleph.config.json`의 `step`은 **11**이다. 12단계 작업 문서가 있어도 현재 설정은 12로 올리지 않았다.
+- WebAuthn 의존성이 `package.json`에 있으나 잠금 파일·빌드·배포 실측은 이번 문서 작성에서 수행하지 않았다.
+- 탈환 작전실 서버 요약 API는 있지만, 공개 화면의 12단계 카드 연결과 41종 운영 실측은 완료로 주장하지 않는다.
+
+---
+
 ## 현재 저장점: 11단계 승인 전 차단 보완 (2026-10-14)
 
 - 브라우저 인증 세션의 localStorage 영속화를 끄고 메모 초기 표시를 승인 대기 안내로 교체했습니다.
