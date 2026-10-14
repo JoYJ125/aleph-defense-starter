@@ -1,0 +1,48 @@
+{
+  "schema": "aleph.xdr.patterns.v1",
+  "moduleKey": "known-cve",
+  "technique": {
+    "id": "T1190",
+    "name": "Exploit Public-Facing Application",
+    "url": "https://attack.mitre.org/techniques/T1190/"
+  },
+  "vulnerability": {
+    "id": "CVE-2021-44228",
+    "url": "https://nvd.nist.gov/vuln/detail/CVE-2021-44228"
+  },
+  "note": "수업용 Wazuh 경보에 나타난 원격 JNDI 조회 구문을 근거로 분류한다. CVE 이름·jndi 단어·낮은 규칙 수준만으로 악용 확정하지 않는다. 알려진 점검 도구는 구체적인 식별자가 확인되지 않아 독립 차단 패턴으로 등록하지 않는다. 이 파일은 패턴 정의이며 실행·차단 코드는 아니다.",
+  "patterns": [
+    {
+      "name": "jndi-lookup-in-header",
+      "condition": {
+        "description": "요청 머리글에 원격 JNDI 조회 구문이 포함된 경우",
+        "fields": [
+          "data.useragent",
+          "rule.description"
+        ],
+        "match": {
+          "field": "data.useragent",
+          "regex": "\\\\$\\\\{jndi:(?:ldap|ldaps|rmi|dns)://[^}]+\\\\}",
+          "flags": "i"
+        }
+      },
+      "evidence": "CVE-2021-44228의 JNDI 조회 취약점은 로그로 유입된 외부 제어 문자열을 악용하며, 수업용 경보 kc-01·kc-04·kc-07·kc-08의 머리글에 해당 형태가 있다."
+    },
+    {
+      "name": "jndi-lookup-in-parameter",
+      "condition": {
+        "description": "요청 URL의 인자에 원격 JNDI 조회 구문이 포함된 경우",
+        "fields": [
+          "data.url",
+          "rule.description"
+        ],
+        "match": {
+          "field": "data.url",
+          "regex": "\\\\$\\\\{jndi:(?:ldap|ldaps|rmi|dns)://[^}]+\\\\}",
+          "flags": "i"
+        }
+      },
+      "evidence": "MITRE ATT&CK T1190은 공개 서비스 취약점 악용을 설명하며, 수업용 경보 kc-02·kc-03·kc-05·kc-06·kc-08의 URL 인자에 JNDI 원격 조회 형태가 있다."
+    }
+  ]
+}
