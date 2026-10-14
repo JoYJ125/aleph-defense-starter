@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BYTE BACK | 점령된 자료실</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#101a28">
   <style>
     :root { color-scheme: dark; font-family: system-ui, sans-serif; }
     body { margin: 0; min-height: 100vh; background: #101a28; color: #ecf4ff; }
@@ -12,6 +14,9 @@
     h1 { margin: 16px 0; font-size: clamp(30px, 7vw, 48px); line-height: 1.2; }
     p { font-size: 17px; line-height: 1.7; color: #bfd0e5; }
     .notice { margin: 26px 0; padding: 18px; border: 1px solid #d07384; border-radius: 14px; color: #ffe3e8; background: #612a3544; }
+    .app-info { margin: 22px 0; padding: 16px 18px; border: 1px solid #51667c; border-radius: 14px; background: #1a2a3d; }
+    .app-info h2 { margin: 0 0 8px; font-size: 20px; }
+    .app-info p { margin: 7px 0; font-size: 15px; }
     .auth { margin: 28px 0; padding-bottom: 24px; border-bottom: 1px solid #51667c; }
     .auth h2 { margin: 0 0 16px; font-size: 22px; }
     .auth form { display: grid; gap: 12px; max-width: 420px; }
@@ -41,6 +46,13 @@
     <div class="eyebrow">BYTE BACK · 1단계 피해 확인</div>
     <h1>점령된 자료실</h1>
     <p>로그인한 사용자만 자료를 볼 수 있습니다. 아래 기록은 모두 실습을 위해 만든 가상 자료입니다.</p>
+    <section class="app-info" aria-labelledby="app-info-heading">
+      <h2 id="app-info-heading">BYTE BACK 내 자료실 앱</h2>
+      <p>이 사이트는 지원하는 브라우저에서 홈 화면에 추가할 수 있습니다. 설치만으로 기기 승인이 완료되지는 않습니다.</p>
+      <p id="device-approval-status" role="status" aria-live="polite">기기 승인 상태: 확인되지 않음 — 서버에서 승인 여부를 확인하는 별도 기능이 연결되지 않았습니다.</p>
+      <p id="connection-status" role="status" aria-live="polite">연결 상태를 확인하고 있습니다.</p>
+      <p>오프라인에서는 로그인·메모 조회·변경 등 보호된 요청을 사용할 수 없습니다. 인터넷 연결 후 다시 로그인하거나 필요한 인증을 완료해 주세요.</p>
+    </section>
     <section class="auth" aria-labelledby="auth-heading">
       <h2 id="auth-heading">로그인</h2>
       <form id="login-form">
@@ -77,6 +89,15 @@
     <ul id="notes" aria-live="polite"><li>로그인 후 자료를 확인할 수 있습니다.</li></ul>
   </main>
   <script type="module">
+    const connectionStatus = document.querySelector('#connection-status');
+    function updateConnectionStatus() {
+      connectionStatus.textContent = navigator.onLine
+        ? '네트워크 연결 감지됨 — 보호된 자료 접근은 별도 인증 및 서버 확인이 필요합니다.'
+        : '오프라인 — 보호된 자료를 불러오거나 수정할 수 없습니다.';
+    }
+    window.addEventListener('online', updateConnectionStatus);
+    window.addEventListener('offline', updateConnectionStatus);
+    updateConnectionStatus();
     const loginForm = document.querySelector('#login-form');
     const loginSubmit = document.querySelector('#login-submit');
     const authHeading = document.querySelector('#auth-heading');
