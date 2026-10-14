@@ -90,3 +90,10 @@
 ## 다음 단계 안내
 
 [AGENTS.md](AGENTS.md)를 먼저 읽히고 한 번에 한 제작 단위만 요청하세요. 5단계의 원본 API 주소와 6단계 이후 정책 규칙은 해당 단계 원고와 계약을 따릅니다. 비밀번호·토큰·서버 전용 키·실제 학생 기록을 코드, Git, 제출 묶음에 넣지 않습니다.
+## 10단계: 비공개 가상 메모 한 건 시험 복원 (2026-10-14)
+
+- 서비스: `test-memo-restore` (시험 Preview 전용), 경로: `POST /api/test-restore/:id`. 기존 `GET/POST /api/learning-memos` 및 `GET/PUT/DELETE /api/learning-memos/:id`는 유지합니다.
+- Vercel **Preview에서만** `TEST_MEMO_RESTORE_ENABLED=true`를 설정해야 활성화됩니다. Production에서는 403으로 거부합니다. 요청자는 Supabase로 검증된 **시험 계정 B**여야 하며 서버 환경변수 `TEST_ACCOUNT_B_USER_ID`와 일치해야 합니다. 브라우저에서 전달한 소유자·사본은 신뢰하지 않습니다.
+- 비공개 서버 환경변수 `PRIVATE_TEST_MEMO_SNAPSHOT_JSON`은 `{payload:{version,verifiedAt,id,owner_id,title,content,contentSha256},signature}` 형식의 Ed25519 서명 사본입니다. `TEST_MEMO_SNAPSHOT_PUBLIC_KEY_PEM`은 독립적으로 확보한 신뢰 공개키, `TEST_MEMO_INCIDENT_AT`은 침해 시각입니다. 사본/키가 없거나 서명·시각·ID·소유자·SHA-256이 일치하지 않으면 중단합니다. **실제 메모 내용과 비밀키는 Git에 넣지 않습니다.**
+- 기존에 존재하는 B 소유 메모 **한 행**의 제목·내용만 조건부 갱신하고 ID·소유자·내용 SHA-256을 재검증합니다. 다른 메모 및 감사 기록은 건드리지 않으며, 삭제된 행의 재생성은 지원하지 않습니다. 실 운영 복원 경로가 아닙니다.
+- 로컬 가상 시험: `node --test test/restore-one-test-memo.test.mjs`. B의 메모 복원, 다른 행 보존, 잘못된 ID·소유자·변조 사본 거부를 확인합니다. 운영 환경 시험이나 심판 판정 증거는 아닙니다.
