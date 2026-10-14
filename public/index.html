@@ -47,9 +47,9 @@
 </head>
 <body>
   <main>
-    <div class="eyebrow">BYTE BACK · 1단계 피해 확인</div>
-    <h1>점령된 자료실</h1>
-    <p>로그인한 사용자만 자료를 볼 수 있습니다. 아래 기록은 모두 실습을 위해 만든 가상 자료입니다.</p>
+    <div class="eyebrow">BYTE BACK · 11단계 기기 승인</div>
+    <h1>보호된 자료실 접속</h1>
+    <p>자료실은 로그인과 서버의 기기 승인 확인을 모두 통과한 뒤에만 열립니다.</p>
     <section class="app-info" aria-labelledby="app-info-heading">
       <h2 id="app-info-heading">BYTE BACK 내 자료실 앱</h2>
       <p>이 사이트는 지원하는 브라우저에서 홈 화면에 추가할 수 있습니다. 설치만으로 기기 승인이 완료되지는 않습니다.</p>
@@ -75,7 +75,7 @@
         <p id="signed-in-user"></p>
         <button id="logout-button" type="button">로그아웃</button>
       </div>
-      <form id="memo-form" class="memo-form" hidden>
+      <form id="memo-form" class="memo-form" hidden inert>
         <h3 id="memo-form-heading">새 가상 메모</h3>
         <label>제목
           <input id="memo-title" name="title" maxlength="200" required>
@@ -91,7 +91,7 @@
       <p id="memo-status" role="status" aria-live="polite"></p>
       <p id="auth-status" role="status" aria-live="polite">로그인 기능을 준비하고 있습니다.</p>
     </section>
-    <div class="notice">로그인하지 않은 방문자의 자료 요청은 거부됩니다.</div>
+    <div class="notice">로그인 및 서버 기기 승인 검증 전에는 보호 자료를 제공하지 않습니다.</div>
     <ul id="notes" aria-live="polite" hidden></ul>
   </main>
   <script type="module">
@@ -113,6 +113,7 @@
       serverDeviceApproved = false;
       ++memoRequestId;
       protectedMemoForm.hidden = true;
+      protectedMemoForm.inert = true;
       protectedNotes.replaceChildren();
       protectedNotes.hidden = true;
       deviceApprovalRequest.disabled = true;
@@ -188,6 +189,7 @@
 
     function renderMemos(notes) {
       if (!serverDeviceApproved) return;
+      memoForm.inert = false;
       list.hidden = false;
       if (notes.length === 0) {
         showMemoMessage('표시할 자료가 없습니다.');
@@ -301,6 +303,7 @@
       loginForm.hidden = isSignedIn;
       signedIn.hidden = !isSignedIn;
       memoForm.hidden = true;
+      memoForm.inert = true;
       void checkDeviceApproval(session);
       if (isSignedIn) {
         signedInUser.textContent = `${session.user.email || '계정'}으로 로그인되어 있습니다.`;
