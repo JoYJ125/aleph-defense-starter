@@ -15,6 +15,12 @@ function readPracticeEvent(event) {
 export function detect(events) {
   if (!Array.isArray(events)) throw new TypeError('invalid_detection_events');
 
+  // 합성 도플갱어 사건: 실제 계약에 있는 엔진 확인 deviceId만 사용합니다.
+  for (const event of events) {
+    const proposal = proposeRevocation(event);
+    if (proposal.action === 'propose_revocation') return proposal;
+  }
+
   const bySubject = new Map();
   for (const rawEvent of events) {
     const event = readPracticeEvent(rawEvent);
@@ -56,10 +62,10 @@ export function proposeRevocation(request) {
     event => event && typeof event === 'object'
       && event.kind === 'GET' && Number.isFinite(event.count) && event.count >= 10
   );
-  // verifiedDeviceId는 운영 엔진이 확인해 전달한 가상 기기 식별자만 허용합니다.
-  const deviceId = request.verifiedDeviceId;
+  // deviceId는 운영 엔진이 확인해 전달한 가상 기기 식별자만 허용합니다.
+  const deviceId = request.deviceId;
   if (!verified || !unusualNetwork || !oddHour || !burst
-      || typeof deviceId !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(deviceId)) {
+      || typeof deviceId !== 'string' || !/^[a-f0-9]{16}$/.test(deviceId)) {
     return { action: 'observe' };
   }
   return { action: 'propose_revocation', reasonCode: 'compound_anomaly', deviceId };
