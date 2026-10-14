@@ -18,5 +18,5 @@
     "DELETE /api/learning-memos/:id"
   ],
   "originalApiUrl": "https://aleph-defense-starter-taupe.vercel.app/api/learning-memos",
-  "restoreRoute": null
+  "restoreRoute": "https://aleph-defense-starter-taupe.vercel.app/api/test-restore/:id"
 }
