@@ -32,7 +32,7 @@ test('B single memo restore matches ID, owner, content hash; other rows/audit un
   const preview = await previewOneTestMemo({ db, ...args });
   assert.equal(preview.version, payload.version);
   assert.deepEqual(preview.changeFields, ['title', 'content']);
-  await assert.rejects(restoreOneTestMemo({ db, ...args }), /RESTORE_CONFIRMATION_REQUIRED/);
+  await assert.rejects(restoreOneTestMemo({ db, ...args, reloadSnapshot: async () => snapshot }), /RESTORE_CONFIRMATION_REQUIRED/);
   assert.equal(rows[0].content, 'tampered');
   const result = await restoreOneTestMemo({ db, ...args,
     reloadSnapshot: async () => snapshot, confirmationToken: preview.confirmationToken });
