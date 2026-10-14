@@ -22,6 +22,10 @@ export function decide(alert) {
   if (matches.length) {
     confidence = matches.length > 1 ? 0.99 : level >= 10 ? 0.95 : 0.9;
     reason = matches.map(pattern => pattern.name).join(', ');
+  } else if (level >= 5 && level <= 8 && Array.isArray(rule.mitre) && rule.mitre.includes('T1190')) {
+    // 취약점 관련 저·중간 수준 경보: 공격 구문이 확인되지 않아 차단하지 않고 알림만 남김.
+    confidence = 0.55;
+    reason = 'T1190: unconfirmed known-CVE indicator';
   } else if (description.includes('CVE-2021-44228') && level >= 9) {
     confidence = 0.6;
     reason = 'jndi-lookup-in-header / jndi-lookup-in-parameter: incomplete evidence';
