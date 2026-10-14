@@ -1,0 +1,90 @@
+{
+  "schema": "aleph.xdr.patterns.v1",
+  "moduleKey": "exfiltration",
+  "techniques": [
+    {
+      "id": "T1041",
+      "name": "Exfiltration Over C2 Channel",
+      "url": "https://attack.mitre.org/techniques/T1041/"
+    },
+    {
+      "id": "T1048",
+      "name": "Exfiltration Over Alternative Protocol",
+      "url": "https://attack.mitre.org/techniques/T1048/"
+    }
+  ],
+  "note": "탐지 후보 패턴이며 ATT&CK 기술 확정 판정이 아니다. 경보에는 실제 프로토콜·C2 통로 확인 자료가 없으므로 유출 유형을 단정하지 않는다.",
+  "patterns": [
+    {
+      "name": "unfamiliar-destination-bulk-transfer",
+      "condition": {
+        "description": "처음 보는 목적지로 대량 자료·메모 또는 압축 파일이 전송됨",
+        "fields": [
+          "rule.description",
+          "rule.mitre",
+          "data.dstip",
+          "data.bytes",
+          "data.files"
+        ],
+        "indicators": [
+          "처음 보는 목적지",
+          "대용량 전송",
+          "다량 파일 반출"
+        ],
+        "caution": "목적지가 처음 보이거나 전송량이 큰 것만으로 T1041/T1048의 통로 유형이 확정되지는 않음"
+      },
+      "techniqueIds": [
+        "T1041",
+        "T1048"
+      ],
+      "evidence": "MITRE T1041은 C2 통로를 통한 자료 유출을, T1048은 대체 프로토콜 유출을 설명하며, 수업용 ex-01·ex-05는 낯선 목적지로 다량 전송된 정황을 보여 준다."
+    },
+    {
+      "name": "off-hours-archive-transfer",
+      "condition": {
+        "description": "수업·업무 시간 밖에 압축 파일이 낯선 외부 주소로 반출됨",
+        "fields": [
+          "timestamp",
+          "rule.description",
+          "rule.mitre",
+          "data.dstip",
+          "data.bytes"
+        ],
+        "indicators": [
+          "수업 시간 밖",
+          "압축 파일",
+          "처음 보는 주소"
+        ],
+        "caution": "업무 외 시간·압축 파일이라는 단서만으로 악성 전송 또는 대체 프로토콜 사용을 확정하지 않음"
+      },
+      "techniqueIds": [
+        "T1048"
+      ],
+      "evidence": "MITRE T1048 탐지 전략은 업무 외 시각의 비정상 외부 파일 전송을 관찰 대상으로 제시하며, 수업용 ex-02는 수업 시간 밖 압축 파일 반출을 기록한다."
+    },
+    {
+      "name": "repeated-high-volume-egress",
+      "condition": {
+        "description": "동일 목적지로 대용량 전송이 여러 차례 반복되거나 명령 통로에서 큰 파일이 반복 반출됨",
+        "fields": [
+          "rule.description",
+          "rule.mitre",
+          "data.dstip",
+          "data.bytes",
+          "data.count"
+        ],
+        "indicators": [
+          "대용량 전송 반복",
+          "같은 목적지",
+          "명령 통로의 반복 전송"
+        ],
+        "caution": "명령 통로 여부는 별도 C2 통신 증거가 있어야 확정됨"
+      },
+      "techniqueIds": [
+        "T1041",
+        "T1048"
+      ],
+      "evidence": "MITRE T1041 탐지 전략은 C2 통신에서 비정상적으로 큰 외부 전송을 다루고, 수업용 ex-03·ex-09는 반복적인 대용량 반출 신호를 보여 준다."
+    }
+  ]
+}
