@@ -1,0 +1,78 @@
+{
+  "schema": "aleph.xdr.patterns.v1",
+  "moduleKey": "privilege",
+  "techniques": [
+    {
+      "id": "T1068",
+      "name": "Exploitation for Privilege Escalation",
+      "url": "https://attack.mitre.org/techniques/T1068/"
+    },
+    {
+      "id": "T1078",
+      "name": "Valid Accounts",
+      "url": "https://attack.mitre.org/techniques/T1078/"
+    }
+  ],
+  "note": "관리자 그룹 추가·낯선 관리자 명령·업무 시간 외 권한 사용은 권한 오남용 의심 신호이지 계정 탈취 또는 취약점 악용의 확정 증거가 아니다. 특히 T1068은 소프트웨어 취약점 악용 증거가 필요하므로 관리자 명령 실행만으로 T1068을 확정하지 않는다. 수업용 경보의 관찰 사실만 기록하며 자동 차단 코드는 포함하지 않는다.",
+  "patterns": [
+    {
+      "name": "unexpected-admin-group-membership",
+      "condition": {
+        "description": "일반 계정이 관리자 그룹에 새로 추가되거나 여러 계정의 관리자 그룹 추가가 연속 발생함",
+        "fields": [
+          "rule.description",
+          "rule.mitre",
+          "data.group",
+          "data.count"
+        ],
+        "indicators": [
+          "관리자 그룹에 추가",
+          "일반 계정의 관리자 그룹 진입",
+          "복수 계정 관리자 그룹 추가"
+        ]
+      },
+      "techniqueId": "T1078",
+      "evidence": "MITRE T1078은 유효 계정의 권한 오남용을 다루며, 수업용 pv-01·pv-04·pv-05는 관리자 그룹 추가를 보여 주지만 계정 탈취 자체를 확정하지는 않는다."
+    },
+    {
+      "name": "unexpected-privileged-command",
+      "condition": {
+        "description": "방금 관리자 권한을 얻은 계정, 다른 계정의 권한을 쓰는 세션 또는 처음 보는 주소에서 관리자 명령을 실행함",
+        "fields": [
+          "rule.description",
+          "rule.mitre",
+          "data.srcip",
+          "data.srcuser"
+        ],
+        "indicators": [
+          "승격 직후 관리자 명령",
+          "다른 계정 권한으로 관리자 명령",
+          "낯선 주소에서 관리자 명령"
+        ]
+      },
+      "techniqueId": "T1078",
+      "relatedTechniqueId": "T1068",
+      "evidence": "MITRE T1078은 정상 계정의 권한 오남용을 설명하고 T1068은 취약점 악용에 의한 권한 상승을 설명하며, 수업용 pv-02·pv-03·pv-08은 비정상 관리자 명령을 보여 주되 취약점 악용 여부는 불명확하다."
+    },
+    {
+      "name": "off-hours-privileged-activity",
+      "condition": {
+        "description": "수업·업무 시간 밖에 관리자 그룹 추가 또는 관리자 명령 실행이 관찰되고 낯선 출발 주소나 권한 변경이 함께 나타남",
+        "fields": [
+          "timestamp",
+          "rule.description",
+          "rule.mitre",
+          "data.srcip"
+        ],
+        "indicators": [
+          "수업 시간 밖 관리자 명령",
+          "업무 외 시각 관리자 그룹 추가와 명령 실행",
+          "처음 보는 주소의 권한 사용"
+        ]
+      },
+      "techniqueId": "T1078",
+      "relatedTechniqueId": "T1068",
+      "evidence": "MITRE T1078 탐지 지침은 평소와 다른 시간대의 계정 활동을 이상 신호로 보며, 수업용 pv-03·pv-07은 업무 외 권한 사용을 보여 주지만 단독으로 공격을 확정하지 않는다."
+    }
+  ]
+}
