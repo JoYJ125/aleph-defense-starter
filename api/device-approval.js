@@ -29,6 +29,7 @@ export default async function handler(req, res) {
     if (typeof action !== 'string' || !['register-start','register-finish','auth-start','auth-finish'].includes(action)) return reply(res, 400, { error: 'INVALID_ACTION' });
     const { data: credentials, error: credError } = await db.from('device_credentials').select('*').eq('user_id', uid);
     if (credError) throw credError;
+    if (action === 'auth-start' && credentials.length === 0) return reply(res, 403, { error: 'DEVICE_NOT_REGISTERED' });
     if (action === 'register-start' || action === 'auth-start') {
       const options = action === 'register-start'
         ? await generateRegistrationOptions({
