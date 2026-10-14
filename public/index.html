@@ -91,10 +91,57 @@
       <p id="memo-status" role="status" aria-live="polite"></p>
       <p id="auth-status" role="status" aria-live="polite">로그인 기능을 준비하고 있습니다.</p>
     </section>
+    <section class="app-info" aria-labelledby="operation-title">
+      <h2 id="operation-title">12단계 탈환 작전실</h2>
+      <p id="operation-status" role="status" aria-live="polite">서버 요약 확인 전 · 실측 결과 없음</p>
+      <div id="operation-counts" aria-live="polite">규칙: 확인 전 / 탐지: 미실행 / 회수: 미실행 / 복구: 미실행</div>
+      <h3>가린 서버 기록 (자료 본문 제외)</h3>
+      <ul id="operation-records"><li>서버 응답 확인 전</li></ul>
+      <p>41종 시험: 미실행 (0/41). API 응답이 없으면 통과로 표시하지 않습니다.</p>
+      <button type="button" id="operation-refresh">서버 결과 다시 확인</button>
+    </section>
     <div class="notice">로그인 및 서버 기기 승인 검증 전에는 보호 자료를 제공하지 않습니다.</div>
     <ul id="notes" aria-live="polite" hidden></ul>
   </main>
   <script type="module">
+    const operationStatus = document.querySelector('#operation-status');
+    const operationCounts = document.querySelector('#operation-counts');
+    const operationRecords = document.querySelector('#operation-records');
+    async function refreshOperationRoom() {
+      operationStatus.textContent = '서버 응답 확인 중';
+      operationCounts.textContent = '규칙: 확인 전 / 탐지: 미실행 / 회수: 미실행 / 복구: 미실행';
+      operationRecords.replaceChildren();
+      try {
+        const response = await fetch('/api/operation-room', { cache: 'no-store' });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const data = await response.json();
+        if (data.schema !== 'byteback.operation-room.v1' || !Array.isArray(data.redactedRecords) || !Array.isArray(data.rules)) throw new Error('응답 형식 불일치');
+        const rules = data.redactedRecords.filter(item => item.area === 'rule' && item.status === 'configured');
+        const consistent = rules.length === data.rules.length && data.rules.every(rule => rules.some(item => item.reference === rule.id && item.status === rule.status));
+        if (!consistent) throw new Error('서버 규칙 기록 불일치');
+        const fields = [['detection', '탐지'], ['revocation', '회수'], ['recovery', '복구']];
+        for (const [key] of fields) {
+          const row = data.redactedRecords.find(item => item.area === key);
+          if (!row || row.status !== data[key]?.status) throw new Error('서버 기록 불일치');
+        }
+        operationCounts.textContent = '규칙: ' + rules.length + '개(코드 설정) / ' + fields.map(([key,label]) => label + ': ' + (data[key].status === 'not_run' ? '미실행' : '서버 확인')).join(' / ');
+        for (const item of data.redactedRecords) {
+          const li = document.createElement('li');
+          li.textContent = item.area + ' · ' + item.reference + ' · ' + item.status;
+          operationRecords.append(li);
+        }
+        operationStatus.textContent = '서버 요약 응답 확인 · 운영 시험 통과 의미 아님';
+      } catch (error) {
+        operationCounts.textContent = '실제 API 결과 없음 · 수치 미확인';
+        operationRecords.replaceChildren();
+        const li = document.createElement('li');
+        li.textContent = '서버 기록 미확인';
+        operationRecords.append(li);
+        operationStatus.textContent = '확인 실패: ' + error.message;
+      }
+    }
+    document.querySelector('#operation-refresh').addEventListener('click', refreshOperationRoom);
+    refreshOperationRoom();
     const connectionStatus = document.querySelector('#connection-status');
     function updateConnectionStatus() {
       connectionStatus.textContent = navigator.onLine
