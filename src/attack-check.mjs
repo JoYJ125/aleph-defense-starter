@@ -14,20 +14,9 @@ export async function runAttackChecks(config) {
       || app.pathname !== '/' || app.hostname.endsWith('.example')) {
     throw new Error('aleph.config.json의 실제 배포 주소를 먼저 넣어 주세요.');
   }
-  const response = await fetch(new URL('/api/learning-memos', app), {
-    redirect: 'error', signal: AbortSignal.timeout(10000), cache: 'no-store',
-  });
-  let blocked = false;
-  if (response.status === 401) {
-    try {
-      const body = await response.json();
-      blocked = body?.error === 'UNAUTHORIZED' && Object.keys(body).length === 1;
-    } catch {
-      // A non-JSON response is not proof that the request was denied safely.
-    }
-  } else {
-    await response.body?.cancel();
-  }
-  return [{ attackId: 'anonymous_memo_list', expected: '로그인 토큰 없는 자료 목록 요청은 HTTP 401로 거부',
-    observed: blocked ? '비로그인 요청이 HTTP 401로 거부되어 자료가 반환되지 않음' : `비로그인 자료 요청 차단이 확인되지 않음 (HTTP ${response.status})` }];
+  // 운영 심판 요청 로그와 대조하지 못한 경우에는 실측으로 주장하지 않는다.
+  // 이 점검은 제출 묶음에서 항상 미실행으로 남기고, 실측은 별도 증거 절차로 기록한다.
+  return [{ attackId: 'anonymous_memo_list',
+    expected: '로그인 토큰 없는 자료 목록 요청은 HTTP 401로 거부',
+    observed: 'not_run' }];
 }
