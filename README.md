@@ -2,7 +2,14 @@
 
 이 저장소는 1단계에서 학생 본인이 GitHub 저장소와 Vercel 배포를 만드는 출발점입니다. 실제 학생 자료, 토큰, 비밀키를 넣지 마세요.
 
-## 현재 저장점: 8단계 기능 포함 (2026-10-13)
+## 현재 저장점: 9단계 기능 포함 (2026-10-14)
+
+- 9단계 탐지기(`src/detect.mjs`)는 검증된 가상 사건 계약의 `at`, `method`, `identity.sub`만 사용합니다. 메모 본문·토큰·실명은 저장하거나 출력하지 않습니다.
+- 같은 가명 주체의 GET 요청이 어느 10분 구간에서든 120건을 초과할 때만 `{ action: 'propose_revocation', reasonCode: 'burst_read', subject }`를 반환합니다. 정상 사건과 정확히 120건은 `{ action: 'observe' }`입니다.
+- 현재 9단계 사건 계약에는 검증된 기기 ID와 네트워크 변화 정보가 없습니다. 따라서 이 구현은 특정 기기 한 개의 회수를 제안하거나 네트워크·다량 조회 복합 탐지를 검증하지 못합니다. 실제 회수 API, 기기 권한 변경, 심판 회수 시간 측정은 구현하지 않았습니다.
+- 로컬 가상 사건 확인: `npm run detect:test` (정상 사건 `observe`, 121건 이상 폭주 사건 `propose_revocation`). 기존 접속 판정 확인: `npm run decider:test`, `npm run fixture:7`. 제출 묶음은 커밋 후 별도로 `bundle-notes.json`을 작성하고 `npm run bundle`을 실행합니다. 로컬 연습 결과는 실제 심판 판정이 아닙니다.
+
+## 이전 저장점: 8단계 기능 포함 (2026-10-13)
 
 - SDP 판정기(`src/decider.mjs`)에 자원별 구역 접근을 통제하는 `zone_rules` 규칙을 추가했습니다.
   - 내 자료실 메모(`notes`)와 강사 공지(`notices`) 구역을 구분하고, 알 수 없는 서비스나 경로 요청은 `route_not_allowed`로 차단합니다.

@@ -12,7 +12,25 @@ function reads(count, { intervalSeconds = 2, owner = subject, start = START } = 
   }));
 }
 
+// 운영 계약의 deviceId 및 signals/recentEvents를 흉내 낸 합성 사건입니다.
+const doppelganger = {
+  deviceId: '0123456789abcdef',
+  signals: { source: 'judge_fixture', region: 'unknown', network: 'unusual', hour: 2 },
+  recentEvents: [{ kind: 'GET', ageSeconds: 30, count: 15 }],
+};
+
 const cases = [
+  { name: '합성 도플갱어 복합 의심 사건', events: [doppelganger],
+    expected: { action: 'propose_revocation', reasonCode: 'compound_anomaly',
+      deviceId: '0123456789abcdef' } },
+  { name: '가상 기기 ID 없는 사건', events: [{ ...doppelganger, deviceId: undefined }],
+    expected: { action: 'observe' } },
+  { name: '검증 출처 없는 사건', events: [{
+    ...doppelganger, signals: { ...doppelganger.signals, source: 'none' },
+  }], expected: { action: 'observe' } },
+  { name: '정상 네트워크 사건', events: [{
+    ...doppelganger, signals: { ...doppelganger.signals, network: 'usual' },
+  }], expected: { action: 'observe' } },
   { name: '정상 조회 30건', events: reads(30), expected: { action: 'observe' } },
   { name: '10분 안에 120건', events: reads(120), expected: { action: 'observe' } },
   { name: '10분 안에 121건', events: reads(121), expected: {

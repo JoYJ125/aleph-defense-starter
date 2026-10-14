@@ -31,7 +31,7 @@ export function deploymentIdentity(env, config) {
       || !REPO.test(repo || '') || repo === '.' || repo === '..'
       || repo.toLowerCase().endsWith('.git') || !SHA.test(commit || '')
       || !HOST.test(host || '') || !Number.isInteger(config?.step)
-      || config.step < 1 || config.step > 5
+      || config.step < 1 || config.step > 12
       || (config.step >= 5 && !isQueryFreeHttpsApiUrl(config.originalApiUrl))
       || !Array.isArray(allowedRoutes) || allowedRoutes.length === 0
       || allowedRoutes.some(route => typeof route !== 'string' || !route.trim())
