@@ -34,7 +34,8 @@ test('B single memo restore matches ID, owner, content hash; other rows/audit un
   assert.deepEqual(preview.changeFields, ['title', 'content']);
   await assert.rejects(restoreOneTestMemo({ db, ...args }), /RESTORE_CONFIRMATION_REQUIRED/);
   assert.equal(rows[0].content, 'tampered');
-  const result = await restoreOneTestMemo({ db, ...args, confirmationToken: preview.confirmationToken });
+  const result = await restoreOneTestMemo({ db, ...args,
+    reloadSnapshot: async () => snapshot, confirmationToken: preview.confirmationToken });
   assert.equal(result.id, id); assert.equal(result.owner_id, owner);
   assert.equal(result.contentSha256, hash);
   assert.equal(rows[1].content, 'keep');
@@ -48,3 +49,18 @@ test('tampered content rejected', () => assert.throws(() => verifyPrivateMemoSna
   ...args, snapshot: { ...snapshot, payload: { ...payload, content: 'modified' } } }), /VERIFICATION_FAILED/));
 test('missing snapshot rejected', () => assert.throws(() => verifyPrivateMemoSnapshot({
   ...args, snapshot: null }), /UNAVAILABLE/));
+
+test('apply aborts before DB access if independent snapshot reread fails', async () => {
+  let touched = false;
+  const db = { from() { touched = true; throw new Error('DB_TOUCHED'); } };
+  await assert.rejects(restoreOneTestMemo({ db, ...args,
+    confirmationToken: '0'.repeat(64), reloadSnapshot: async () => null }), /SNAPSHOT_UNAVAILABLE/);
+  assert.equal(touched, false);
+});
+test('apply refuses missing independent snapshot reread', async () => {
+  let touched = false;
+  const db = { from() { touched = true; throw new Error('DB_TOUCHED'); } };
+  await assert.rejects(restoreOneTestMemo({ db, ...args,
+    confirmationToken: '0'.repeat(64) }), /SNAPSHOT_RELOAD_REQUIRED/);
+  assert.equal(touched, false);
+});

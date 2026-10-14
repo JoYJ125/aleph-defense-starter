@@ -40,7 +40,15 @@ export default async function handler(req, res) {
     if (req.method === 'GET') return res.status(200).json(await previewOneTestMemo(args));
     if (typeof body.confirmationToken !== 'string')
       return res.status(428).json({ error: 'RESTORE_PREVIEW_REQUIRED' });
-    const result = await restoreOneTestMemo({ ...args, confirmationToken: body.confirmationToken });
+    const result = await restoreOneTestMemo({
+      ...args, confirmationToken: body.confirmationToken,
+      reloadSnapshot: async () => {
+        // Read server-owned snapshot again at apply time, not from the preview object.
+        const fresh = process.env.PRIVATE_TEST_MEMO_SNAPSHOT_JSON;
+        if (!fresh) throw new Error('SNAPSHOT_UNAVAILABLE');
+        return JSON.parse(fresh);
+      },
+    });
     return res.status(200).json(result);
   } catch (error) {
     const invalid = /SNAPSHOT|MEMO_NOT_FOUND|RESTORE_VERIFICATION|RESTORE_CONFIRMATION/.test(error.message);

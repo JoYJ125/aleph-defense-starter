@@ -53,8 +53,11 @@ export async function previewOneTestMemo({ db, ...args }) {
 
 // A single existing B-owned row is updated. No INSERT/UPSERT or audit operations.
 export async function restoreOneTestMemo({ db, snapshot, trustedPublicKey, incidentAt,
-  expectedOwner, requestedId, confirmationToken }) {
-  const args = { snapshot, trustedPublicKey, incidentAt, expectedOwner, requestedId };
+  expectedOwner, requestedId, confirmationToken, reloadSnapshot }) {
+  // Require a separate trusted snapshot read at apply time; never reuse preview data.
+  if (typeof reloadSnapshot !== 'function') throw new Error('SNAPSHOT_RELOAD_REQUIRED');
+  const freshlyReadSnapshot = await reloadSnapshot();
+  const args = { snapshot: freshlyReadSnapshot, trustedPublicKey, incidentAt, expectedOwner, requestedId };
   const preview = await previewOneTestMemo({ db, ...args });
   if (typeof confirmationToken !== 'string'
       || !equalHash(confirmationToken, preview.confirmationToken))
