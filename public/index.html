@@ -97,7 +97,7 @@
       <div id="operation-counts" aria-live="polite">규칙: 확인 전 / 탐지: 미실행 / 회수: 미실행 / 복구: 미실행</div>
       <h3>가린 서버 기록 (자료 본문 제외)</h3>
       <ul id="operation-records"><li>서버 응답 확인 전</li></ul>
-      <p>41종 시험: 미실행 (0/41). API 응답이 없으면 통과로 표시하지 않습니다.</p>
+      <p id="operation-verification">41종 시험: 서버 기록 확인 전</p>
       <button type="button" id="operation-refresh">서버 결과 다시 확인</button>
     </section>
     <div class="notice">로그인 및 서버 기기 승인 검증 전에는 보호 자료를 제공하지 않습니다.</div>
@@ -107,10 +107,12 @@
     const operationStatus = document.querySelector('#operation-status');
     const operationCounts = document.querySelector('#operation-counts');
     const operationRecords = document.querySelector('#operation-records');
+    const operationVerification = document.querySelector('#operation-verification');
     async function refreshOperationRoom() {
       operationStatus.textContent = '서버 응답 확인 중';
       operationCounts.textContent = '규칙: 확인 전 / 탐지: 미실행 / 회수: 미실행 / 복구: 미실행';
       operationRecords.replaceChildren();
+      operationVerification.textContent = '41종 시험: 서버 기록 확인 전';
       try {
         const response = await fetch('/api/operation-room', { cache: 'no-store' });
         if (!response.ok) throw new Error('HTTP ' + response.status);
@@ -124,6 +126,9 @@
           const row = data.redactedRecords.find(item => item.area === key);
           if (!row || row.status !== data[key]?.status) throw new Error('서버 기록 불일치');
         }
+        const verificationRecord = data.redactedRecords.find(item => item.area === 'verification');
+        if (!verificationRecord || !data.verification || verificationRecord.total !== data.verification.total || verificationRecord.executed !== data.verification.executed || verificationRecord.passed !== data.verification.passed || verificationRecord.status !== data.verification.status) throw new Error('시험 기록 불일치');
+        operationVerification.textContent = '시험 ' + data.verification.total + '종 · 실행 ' + data.verification.executed + '건 · 통과 ' + data.verification.passed + '건 · 상태 ' + data.verification.status;
         operationCounts.textContent = '규칙: ' + rules.length + '개(코드 설정) / ' + fields.map(([key,label]) => label + ': ' + (data[key].status === 'not_run' ? '미실행' : '서버 확인')).join(' / ');
         for (const item of data.redactedRecords) {
           const li = document.createElement('li');
@@ -133,6 +138,7 @@
         operationStatus.textContent = '서버 요약 응답 확인 · 운영 시험 통과 의미 아님';
       } catch (error) {
         operationCounts.textContent = '실제 API 결과 없음 · 수치 미확인';
+        operationVerification.textContent = '시험 실측 미확인';
         operationRecords.replaceChildren();
         const li = document.createElement('li');
         li.textContent = '서버 기록 미확인';
