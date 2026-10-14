@@ -17,6 +17,8 @@
     .app-info { margin: 22px 0; padding: 16px 18px; border: 1px solid #51667c; border-radius: 14px; background: #1a2a3d; }
     .app-info h2 { margin: 0 0 8px; font-size: 20px; }
     .app-info p { margin: 7px 0; font-size: 15px; }
+    .app-info button { min-height: 44px; padding: 9px 14px; border-radius: 6px; border: 1px solid #71869b; font: inherit; }
+    .app-info button:disabled { opacity: .7; }
     .auth { margin: 28px 0; padding-bottom: 24px; border-bottom: 1px solid #51667c; }
     .auth h2 { margin: 0 0 16px; font-size: 22px; }
     .auth form { display: grid; gap: 12px; max-width: 420px; }
@@ -49,7 +51,9 @@
     <section class="app-info" aria-labelledby="app-info-heading">
       <h2 id="app-info-heading">BYTE BACK 내 자료실 앱</h2>
       <p>이 사이트는 지원하는 브라우저에서 홈 화면에 추가할 수 있습니다. 설치만으로 기기 승인이 완료되지는 않습니다.</p>
-      <p id="device-approval-status" role="status" aria-live="polite">기기 승인 상태: 확인되지 않음 — 서버에서 승인 여부를 확인하는 별도 기능이 연결되지 않았습니다.</p>
+      <p id="device-approval-status" role="status" aria-live="polite">기기 승인 상태: 확인되지 않음</p>
+      <button id="device-approval-request" type="button" disabled>기기 승인 요청</button>
+      <p>승인 요청은 권한 부여가 아닙니다. 서버의 기기 확인 기능이 준비되지 않아 현재는 자료실이 잠겨 있습니다.</p>
       <p id="connection-status" role="status" aria-live="polite">연결 상태를 확인하고 있습니다.</p>
       <p>오프라인에서는 로그인·메모 조회·변경 등 보호된 요청을 사용할 수 없습니다. 인터넷 연결 후 다시 로그인하거나 필요한 인증을 완료해 주세요.</p>
     </section>
@@ -98,6 +102,55 @@
     window.addEventListener('online', updateConnectionStatus);
     window.addEventListener('offline', updateConnectionStatus);
     updateConnectionStatus();
+    const deviceApprovalStatus = document.querySelector('#device-approval-status');
+    const deviceApprovalRequest = document.querySelector('#device-approval-request');
+    const protectedNotes = document.querySelector('#notes');
+    const protectedMemoForm = document.querySelector('#memo-form');
+    let serverDeviceApproved = false;
+    async function checkDeviceApproval(session) {
+      serverDeviceApproved = false;
+      protectedMemoForm.hidden = true;
+      protectedNotes.replaceChildren(Object.assign(document.createElement('li'), {
+        textContent: '기기 승인 확인 전에는 보호 자료를 표시하지 않습니다.',
+      }));
+      deviceApprovalRequest.disabled = !hasSessionCredentials(session);
+      deviceApprovalStatus.textContent = '기기 승인 상태: 서버 확인 대기';
+      if (!hasSessionCredentials(session)) {
+        deviceApprovalStatus.textContent = '기기 승인 상태: 로그인 후 요청 가능';
+        return;
+      }
+      try {
+        const response = await fetch('/api/device-approval', {
+          headers: { authorization: `Bearer ${session.access_token}` },
+          cache: 'no-store',
+        });
+        // Only a future trusted server-side device attestation contract may grant access.
+        // The current endpoint never returns approved; no browser claim or installation flag is trusted.
+        if (!response.ok) throw new Error('승인 확인 서비스가 준비되지 않았습니다.');
+        deviceApprovalStatus.textContent = '기기 승인 상태: 확인되지 않음';
+      } catch {
+        deviceApprovalStatus.textContent = '기기 승인 상태: 확인 불가 — 보호 자료 접근 차단';
+      }
+    }
+    deviceApprovalRequest.addEventListener('click', async () => {
+      if (!hasSessionCredentials(currentSession)) return;
+      deviceApprovalRequest.disabled = true;
+      deviceApprovalStatus.textContent = '기기 승인 요청 중';
+      try {
+        const response = await fetch('/api/device-approval', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${currentSession.access_token}` },
+          cache: 'no-store',
+        });
+        deviceApprovalStatus.textContent = response.ok
+          ? '기기 승인 요청 접수 — 서버 승인 확인 전까지 자료 접근 차단'
+          : '기기 승인 요청 불가 — 서버 기기 등록 기능 미연결';
+      } catch {
+        deviceApprovalStatus.textContent = '기기 승인 요청 실패 — 보호 자료 접근 차단';
+      } finally {
+        deviceApprovalRequest.disabled = !hasSessionCredentials(currentSession);
+      }
+    });
     const loginForm = document.querySelector('#login-form');
     const loginSubmit = document.querySelector('#login-submit');
     const authHeading = document.querySelector('#auth-heading');
@@ -186,6 +239,7 @@
 
     async function requestMemoApi(path, { method = 'GET', body, session = currentSession } = {}) {
       if (!hasSessionCredentials(session)) throw new Error('로그인이 필요합니다.');
+      if (!serverDeviceApproved) throw new Error('서버에서 기기 승인이 확인되지 않았습니다.');
       const headers = { authorization: `Bearer ${session.access_token}` };
       const options = { method, cache: 'no-store', headers };
       if (body !== undefined) {
@@ -214,7 +268,7 @@
 
     async function loadMemos(session) {
       const requestId = ++memoRequestId;
-      if (!hasSessionCredentials(session)) {
+      if (!hasSessionCredentials(session) || !serverDeviceApproved) {
         showMemoMessage('로그인 후 자료를 확인할 수 있습니다.');
         return;
       }
@@ -234,14 +288,15 @@
       const isSignedIn = hasSessionCredentials(session);
       loginForm.hidden = isSignedIn;
       signedIn.hidden = !isSignedIn;
-      memoForm.hidden = !isSignedIn;
+      memoForm.hidden = !isSignedIn || !serverDeviceApproved;
+      void checkDeviceApproval(session);
       if (isSignedIn) {
         signedInUser.textContent = `${session.user.email || '계정'}으로 로그인되어 있습니다.`;
       } else {
         resetMemoForm();
         memoStatus.textContent = '';
       }
-      void loadMemos(session);
+      if (serverDeviceApproved) void loadMemos(session);
     }
 
     function errorMessage(error) {
