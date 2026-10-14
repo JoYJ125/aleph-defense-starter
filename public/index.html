@@ -90,7 +90,7 @@
       <p id="auth-status" role="status" aria-live="polite">로그인 기능을 준비하고 있습니다.</p>
     </section>
     <div class="notice">로그인하지 않은 방문자의 자료 요청은 거부됩니다.</div>
-    <ul id="notes" aria-live="polite"><li>기기 승인 확인 전에는 보호 자료를 표시하지 않습니다.</li></ul>
+    <ul id="notes" aria-live="polite" hidden></ul>
   </main>
   <script type="module">
     const connectionStatus = document.querySelector('#connection-status');
@@ -111,9 +111,8 @@
       serverDeviceApproved = false;
       ++memoRequestId;
       protectedMemoForm.hidden = true;
-      protectedNotes.replaceChildren(Object.assign(document.createElement('li'), {
-        textContent: '기기 승인 확인 전에는 보호 자료를 표시하지 않습니다.',
-      }));
+      protectedNotes.replaceChildren();
+      protectedNotes.hidden = true;
       deviceApprovalRequest.disabled = true;
       deviceApprovalStatus.textContent = '기기 승인 상태: 서버 확인 대기';
       if (!hasSessionCredentials(session)) {
@@ -179,12 +178,15 @@
     }
 
     function showMemoMessage(message) {
-      const item = document.createElement('li');
-      item.textContent = message;
-      list.replaceChildren(item);
+      list.replaceChildren();
+      list.hidden = true;
+      // Approval and error messages belong in the status area, not protected data.
+      memoStatus.textContent = message;
     }
 
     function renderMemos(notes) {
+      if (!serverDeviceApproved) return;
+      list.hidden = false;
       if (notes.length === 0) {
         showMemoMessage('표시할 자료가 없습니다.');
         return;
@@ -292,7 +294,6 @@
       serverDeviceApproved = false;
       showMemoMessage('기기 승인 확인 전에는 보호 자료를 표시하지 않습니다.');
       resetMemoForm();
-      memoStatus.textContent = '';
       currentSession = session;
       const isSignedIn = hasSessionCredentials(session);
       loginForm.hidden = isSignedIn;
