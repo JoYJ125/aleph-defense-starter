@@ -1,0 +1,73 @@
+{
+  "schema": "aleph.xdr.patterns.v1",
+  "moduleKey": "persistence",
+  "techniques": [
+    {
+      "id": "T1543",
+      "name": "Create or Modify System Process",
+      "url": "https://attack.mitre.org/techniques/T1543/"
+    },
+    {
+      "id": "T1053",
+      "name": "Scheduled Task/Job",
+      "url": "https://attack.mitre.org/techniques/T1053/"
+    }
+  ],
+  "note": "수업용 Wazuh 경보의 설명과 경로에 근거한 지속성 의심 신호만 정리한다. 단일 시작 폴더 변경이나 예약 작업 생성만으로 악성이라고 확정하지 않는다. 시작 폴더 변경은 T1543 자체의 직접 증거가 아니며 관련 지속성 보조 신호로만 취급한다. 이 파일은 판정/차단 코드가 아니다.",
+  "patterns": [
+    {
+      "name": "unsigned-new-service",
+      "condition": {
+        "description": "새로 등록되거나 변경된 서비스의 서명이 없고, 임시 폴더 실행 파일 또는 반복 등록 등 이상 징후가 함께 확인됨",
+        "fields": [
+          "rule.description",
+          "data.path",
+          "rule.mitre"
+        ],
+        "indicators": [
+          "서명 없는 새 서비스 등록",
+          "서비스 실행 파일 변경과 서명 부재",
+          "임시 폴더의 서비스 실행 파일"
+        ]
+      },
+      "techniqueId": "T1543",
+      "evidence": "MITRE ATT&CK T1543은 지속성을 위한 시스템 서비스 생성·변경을 설명하며, 수업용 ps-01·ps-04·ps-06·ps-08에 해당 신호가 있다."
+    },
+    {
+      "name": "unfamiliar-scheduled-task",
+      "condition": {
+        "description": "처음 보는 예약 작업이 수업 시간 밖에 실행되거나 임시 폴더의 불명확한 프로그램을 실행함",
+        "fields": [
+          "rule.description",
+          "data.path",
+          "rule.mitre"
+        ],
+        "indicators": [
+          "낯선 예약 작업",
+          "수업 시간 밖 실행",
+          "임시 폴더 실행 파일",
+          "무작위 작업 이름"
+        ]
+      },
+      "techniqueId": "T1053",
+      "evidence": "MITRE ATT&CK T1053은 예약 작업을 이용한 반복 실행·지속성을 설명하며, 수업용 ps-02·ps-05에서 낯선 작업과 의심스러운 실행 대상이 확인된다."
+    },
+    {
+      "name": "unfamiliar-startup-folder-change",
+      "condition": {
+        "description": "시작 폴더에 평소 목록에 없는 실행 항목이 추가되거나 시작 프로그램이 의심스러운 임시 파일을 가리킴",
+        "fields": [
+          "rule.description",
+          "data.path",
+          "rule.mitre"
+        ],
+        "indicators": [
+          "평소 목록에 없는 시작 폴더 프로그램",
+          "시작 프로그램과 예약 작업이 같은 임시 파일 참조"
+        ]
+      },
+      "techniqueId": "T1543",
+      "evidence": "수업용 ps-03·ps-07은 시작 항목 변경과 실행 대상의 이상 징후를 보여 주며, T1543과 함께 관찰할 지속성 보조 신호이지 T1543 단독 확증은 아니다."
+    }
+  ]
+}
