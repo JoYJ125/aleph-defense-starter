@@ -97,3 +97,42 @@
 - 비공개 서버 환경변수 `PRIVATE_TEST_MEMO_SNAPSHOT_JSON`은 `{payload:{version,verifiedAt,id,owner_id,title,content,contentSha256},signature}` 형식의 Ed25519 서명 사본입니다. `TEST_MEMO_SNAPSHOT_PUBLIC_KEY_PEM`은 독립적으로 확보한 신뢰 공개키, `TEST_MEMO_INCIDENT_AT`은 침해 시각입니다. 사본/키가 없거나 서명·시각·ID·소유자·SHA-256이 일치하지 않으면 중단합니다. **실제 메모 내용과 비밀키는 Git에 넣지 않습니다.**
 - 기존에 존재하는 B 소유 메모 **한 행**의 제목·내용만 조건부 갱신하고 ID·소유자·내용 SHA-256을 재검증합니다. 다른 메모 및 감사 기록은 건드리지 않으며, 삭제된 행의 재생성은 지원하지 않습니다. 실 운영 복원 경로가 아닙니다.
 - 로컬 가상 시험: `node --test test/restore-one-test-memo.test.mjs`. B의 메모 복원, 다른 행 보존, 잘못된 ID·소유자·변조 사본 거부를 확인합니다. 운영 환경 시험이나 심판 판정 증거는 아닙니다.
+
+
+## 10단계: 복구 후 1~9단계 회귀 점검 순서 (체크리스트)
+
+> **실행 기록: 아래 모든 항목 미실행.** 이 표의 '예상'은 통과 결과가 아닙니다. 복구 전 검증된 사본의 버전·서명·대상 ID·소유자·내용 SHA-256을 확인하고, 시험 정책의 변경 범위를 미리보기에서 확인한 뒤 **시험 환경**에서만 복원하세요. 실제 운영 정책·다른 서비스 규칙·감사 이력은 변경하지 않습니다. 비밀값·토큰·메모 본문은 README·Git·출력 로그에 남기지 마세요.
+
+| 순서 / 이전 단계 | 실행 위치·확인 요청 | 정상 기대 | 금지 기대 | 실행 상태 |
+|---|---|---|---|---|
+| 0 / 복원 무결성 | 시험 계정 B의 `POST /api/test-restore/:id` 복원 후 응답과 비공개 사본의 ID·owner_id·contentSha256 비교. 복원 전후 다른 메모 건수/식별자와 감사 기록을 별도로 비교 | 지정한 B의 **한 건**만 ID·소유자·내용 해시가 일치; 다른 메모·감사 이력 보존 | 사본 누락, 서명·해시·ID·소유자 불일치, 타 계정, Production 호출은 거부 | **미실행** |
+| 1 / 배포·공개 자료 | Production URL의 `/`, `/aleph.json`, `/data.json` 응답과 GitHub 커밋 대조 | 화면 표시, 배포 식별자 일치, 공개 응답에 비공개 메모 없음 | 잘못된 배포 식별자·비공개 내용 노출은 실패 | **미실행** |
+| 2 / 인증 | 시험 계정 A·B로 각각 로그인 후 로그아웃; `GET /api/learning-memos` | 유효한 로그인에서 본인 자료만 표시 | 토큰 없는 요청과 로그아웃 뒤 무효 세션은 401 기대 | **미실행** |
+| 3 / 메모 CRUD | A 본인 메모 단건 GET→PUT→GET, 필요하면 별도 **가상 시험 메모** POST→DELETE | A 소유 메모만 조회·변경되고 다른 건은 그대로 유지 | B가 A의 메모 ID로 GET·PUT·DELETE하면 404; 본문 `owner_id` 위조는 403 | **미실행** |
+| 4 / 자료 격리 | A·B의 목록 및 단건 GET을 비교; 복원된 B 한 건의 ID·owner_id·SHA-256 재대조 | A 정상 요청 유지, B 복구 자료 유지, 서로 다른 자료 분리 | A가 B 자료 또는 B가 A 자료 요청 시 거부 | **미실행** |
+| 5 / 무인증·원본 API | `npm run test:r5` 및 `npm run test:package`; `aleph.config.json`의 `originalApiUrl`과 허용 경로 확인 | 테스트에서 정상 API 계약 유지 | 무인증 자료 요청·원본 API 우회로 다른 사람 자료 조회 불가 | **미실행** |
+| 6 / 기기 등록 | `npm run decider:test`의 등록·미등록 가상 요청 | 등록 기기 `allow` | 미등록 기기 `deny/device_not_registered` | **미실행** |
+| 7 / 복합 이상 접속 | `npm run fixture:7`, `npm run decider:test` | 정상 접속·검증된 재인증 `allow` | 복합 의심 접속은 `step_up/step_up_required` | **미실행** |
+| 8 / 구역·경로 정책 | `src/decider.mjs` 계약에 맞춘 시험 요청: 메모 단건, 공지 읽기, 공지 쓰기, 메모 목록, 알 수 없는 경로, `export` 경로 | 허용된 단건 및 공지 읽기 `allow` | 공지 쓰기·메모 목록은 `zone_not_allowed`, 알 수 없는 경로·기능 경로는 `route_not_allowed` | **미실행** |
+| 9 / 사건 탐지 | `npm run detect:test`의 정상 사건·120건·121건 이상 및 복합 사건 가상 점검 | 정상·임계값 이하 사건 `observe` | 초과 조회·검증된 복합 의심 사건은 해당 회수 **제안** 기대; 실제 세션 회수 여부는 별도 확인 필요 | **미실행** |
+
+### 실행 순서와 결과 기록 규칙
+
+1. **복원 전:** `git status --short`, `git log -1 --oneline`으로 로컬 변경을 확인합니다. 안전 사본·신뢰 공개키·침해 시각과 시험 계정 B의 복원 대상 한 건을 검증합니다. 사본이 없거나 검증에 실패하면 **중단**합니다.
+2. **복원 직후:** 표의 0번부터 시작하여 B의 한 건에 대해 **ID·소유자·내용 SHA-256**을 비교합니다. A/B의 다른 메모와 감사 이력은 전후 상태를 비교합니다. 복원 검증에 실패하면 이후 점검도 중단합니다.
+3. **배포·API:** 1~5번을 순서대로 확인합니다. A·B의 요청은 **시험 계정/가상 메모**만 사용하고, 타인 메모를 변경하는 공격 시험은 실제 운영 데이터에 수행하지 않습니다. 5번 원본 API의 실제 접근 결과는 별도로 기록합니다.
+4. **정책·탐지:** 6~9번은 로컬 가상 요청 점검을 먼저 실행합니다. `npm run decider:test`, `npm run fixture:7`, `npm run detect:test`는 **실제 운영 엔진·심판 통과 증거가 아닙니다**. 실제 서비스의 거부 여부는 엔진에서 별도로 검증해야 합니다.
+5. **기록:** 각 항목의 '미실행'을 실제 수행 후에만 '통과/실패'로 바꾸고, 실행 시각·환경(로컬/Preview/Production)·HTTP 상태 또는 판정 코드·커밋 SHA를 **비밀값 없이** 적습니다. 실패하면 첫 오류를 기록하고 후속 단계를 보류합니다. 확인하지 않은 정상·금지 결과는 추정으로 채우지 않습니다.
+
+로컬 점검 명령(Windows PowerShell, **직접 실행 전까지 미실행**):
+
+```powershell
+npm.cmd run test:package
+npm.cmd run test:r5
+npm.cmd run decider:test
+npm.cmd run fixture:7
+npm.cmd run detect:test
+node --test test/policy-restore-preview.test.mjs test/restore-test-policy.test.mjs test/restore-one-test-memo.test.mjs
+```
+
+**주의:** 이 명령만으로 B의 복구된 DB 메모·A/B 접근 격리·감사 기록 보존·Production 동작이 검증되지는 않습니다. 해당 항목은 실제 시험 환경의 관측 결과가 필요합니다.
