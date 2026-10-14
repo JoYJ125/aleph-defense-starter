@@ -38,3 +38,29 @@ export function detect(events) {
 
   return { action: 'observe' };
 }
+
+
+// 운영 엔진이 검증한 복합 의심 신호에 대한 별도 제안입니다.
+// 기기 식별자가 없거나 출처가 검증되지 않으면 회수 대상을 추측하지 않습니다.
+// 접근 허용/거부를 반환하는 decide()와 실제 기기 권한은 변경하지 않습니다.
+export function proposeRevocation(request) {
+  if (!request || typeof request !== 'object' || Array.isArray(request)) return { action: 'observe' };
+  const signals = request.signals;
+  const source = signals?.source;
+  const verified = typeof source === 'string' && source.length > 0
+    && source !== 'none' && source !== 'unknown';
+  const hour = signals?.hour;
+  const unusualNetwork = signals?.network === 'unusual';
+  const oddHour = Number.isInteger(hour) && (hour < 6 || hour > 22) && hour >= 0 && hour <= 23;
+  const burst = Array.isArray(request.recentEvents) && request.recentEvents.some(
+    event => event && typeof event === 'object'
+      && event.kind === 'GET' && Number.isFinite(event.count) && event.count >= 10
+  );
+  // verifiedDeviceId는 운영 엔진이 확인해 전달한 가상 기기 식별자만 허용합니다.
+  const deviceId = request.verifiedDeviceId;
+  if (!verified || !unusualNetwork || !oddHour || !burst
+      || typeof deviceId !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(deviceId)) {
+    return { action: 'observe' };
+  }
+  return { action: 'propose_revocation', reasonCode: 'compound_anomaly', deviceId };
+}
