@@ -54,8 +54,8 @@
       <h2 id="app-info-heading">BYTE BACK 내 자료실 앱</h2>
       <p>이 사이트는 지원하는 브라우저에서 홈 화면에 추가할 수 있습니다. 설치만으로 기기 승인이 완료되지는 않습니다.</p>
       <p id="device-approval-status" role="status" aria-live="polite">기기 승인 상태: 확인되지 않음</p>
-      <button id="device-approval-request" type="button" disabled aria-describedby="device-approval-status">승인 요청 서비스 준비 중</button>
-      <p>현재 승인 요청을 접수하는 신뢰 가능한 서버 서비스가 연결되지 않았습니다. 설치 여부나 버튼 클릭으로 승인되지 않습니다.</p>
+      <button id="device-approval-request" type="button" disabled aria-describedby="device-approval-status">기기 서명 확인</button>
+      <p>기기 등록 및 보안 키 서명 검증은 서버에서 처리합니다. 설치 여부나 버튼 클릭만으로 승인되지 않습니다.</p>
       <p id="connection-status" role="status" aria-live="polite">연결 상태를 확인하고 있습니다.</p>
       <p>오프라인에서는 로그인·메모 조회·변경 등 보호된 요청을 사용할 수 없습니다. 인터넷 연결 후 다시 로그인하거나 필요한 인증을 완료해 주세요.</p>
     </section>
@@ -109,49 +109,99 @@
     const protectedNotes = document.querySelector('#notes');
     const protectedMemoForm = document.querySelector('#memo-form');
     let serverDeviceApproved = false;
+    let deviceProof = null; // Memory only; never localStorage or IndexedDB.
+    let approvalEpoch = 0;
+    const decode64 = value => Uint8Array.from(atob(value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '=')), c => c.charCodeAt(0));
+    const encode64 = value => btoa(String.fromCharCode(...new Uint8Array(value))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    const credentialJSON = credential => ({
+      id: credential.id, rawId: encode64(credential.rawId), type: credential.type,
+      response: credential.response.attestationObject
+        ? { clientDataJSON: encode64(credential.response.clientDataJSON),
+            attestationObject: encode64(credential.response.attestationObject),
+            transports: credential.response.getTransports?.() ?? [] }
+        : { clientDataJSON: encode64(credential.response.clientDataJSON),
+            authenticatorData: encode64(credential.response.authenticatorData),
+            signature: encode64(credential.response.signature),
+            userHandle: credential.response.userHandle ? encode64(credential.response.userHandle) : undefined },
+      clientExtensionResults: credential.getClientExtensionResults(),
+      authenticatorAttachment: credential.authenticatorAttachment ?? undefined,
+    });
+    async function approvalApi(session, action, response) {
+      const result = await fetch('/api/device-approval', {
+        method: 'POST', cache: 'no-store',
+        headers: { authorization: `Bearer ${session.access_token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ action, response }),
+      });
+      const body = await result.json();
+      if (!result.ok) throw new Error(body.error || '서버 기기 검증 실패');
+      return body;
+    }
+    async function runDeviceCeremony(session, mode, epoch) {
+      const start = await approvalApi(session, mode + '-start');
+      const options = start.options;
+      let credential;
+      if (mode === 'register') {
+        credential = await navigator.credentials.create({ publicKey: {
+          ...options, challenge: decode64(options.challenge), user: { ...options.user, id: decode64(options.user.id) },
+          excludeCredentials: (options.excludeCredentials || []).map(c => ({ ...c, id: decode64(c.id) })),
+        } });
+      } else {
+        credential = await navigator.credentials.get({ publicKey: {
+          ...options, challenge: decode64(options.challenge),
+          allowCredentials: (options.allowCredentials || []).map(c => ({ ...c, id: decode64(c.id) })),
+        } });
+      }
+      if (!credential) throw new Error('기기 인증이 취소되었습니다.');
+      const result = await approvalApi(session, mode + '-finish', credentialJSON(credential));
+      if (epoch !== approvalEpoch || currentSession?.access_token !== session.access_token) return;
+      if (mode === 'register') {
+        deviceApprovalStatus.textContent = '기기 등록 완료 — 실제 서명 확인을 진행합니다.';
+        await runDeviceCeremony(session, 'auth', epoch);
+        return;
+      }
+      if (result.approved === true && typeof result.proof === 'string') {
+        deviceProof = result.proof;
+        serverDeviceApproved = true;
+        protectedMemoForm.hidden = false;
+        protectedMemoForm.inert = false;
+        deviceApprovalStatus.textContent = '서버에서 등록 기기 서명을 확인했습니다. 자료실을 엽니다.';
+        void loadMemos(session);
+      }
+    }
     async function checkDeviceApproval(session) {
+      const epoch = ++approvalEpoch;
       serverDeviceApproved = false;
+      deviceProof = null;
       ++memoRequestId;
       protectedMemoForm.hidden = true;
       protectedMemoForm.inert = true;
       protectedNotes.replaceChildren();
       protectedNotes.hidden = true;
-      deviceApprovalRequest.disabled = true;
-      deviceApprovalStatus.textContent = '기기 승인 상태: 서버 확인 대기';
-      if (!hasSessionCredentials(session)) {
-        deviceApprovalStatus.textContent = '기기 승인 상태: 로그인 후 요청 가능';
-        return;
-      }
-      try {
-        const response = await fetch('/api/device-approval', {
-          headers: { authorization: `Bearer ${session.access_token}` },
-          cache: 'no-store',
-        });
-        // Only a future trusted server-side device attestation contract may grant access.
-        // The current endpoint never returns approved; no browser claim or installation flag is trusted.
-        if (!response.ok) throw new Error('승인 확인 서비스가 준비되지 않았습니다.');
-        deviceApprovalStatus.textContent = '기기 승인 상태: 확인되지 않음';
-      } catch {
-        deviceApprovalStatus.textContent = '기기 승인 상태: 확인 불가 — 보호 자료 접근 차단';
-      }
+      deviceApprovalRequest.disabled = !hasSessionCredentials(session) || !window.PublicKeyCredential;
+      deviceApprovalRequest.textContent = '기기 등록 및 서명으로 승인';
+      deviceApprovalStatus.textContent = !hasSessionCredentials(session)
+        ? '로그인 후 등록 기기 서명을 확인할 수 있습니다.'
+        : '기기 서명 확인 전 — 보호 자료 접근 차단';
+      if (epoch !== approvalEpoch) return;
     }
     deviceApprovalRequest.addEventListener('click', async () => {
-      if (!hasSessionCredentials(currentSession)) return;
+      const session = currentSession;
+      if (!hasSessionCredentials(session) || !window.PublicKeyCredential) return;
+      const epoch = approvalEpoch;
       deviceApprovalRequest.disabled = true;
-      deviceApprovalStatus.textContent = '기기 승인 요청 중';
+      deviceApprovalStatus.textContent = '서버가 확인할 기기 서명을 요청하고 있습니다.';
       try {
-        const response = await fetch('/api/device-approval', {
-          method: 'POST',
-          headers: { authorization: `Bearer ${currentSession.access_token}` },
-          cache: 'no-store',
-        });
-        deviceApprovalStatus.textContent = response.ok
-          ? '기기 승인 요청 접수 — 서버 승인 확인 전까지 자료 접근 차단'
-          : '기기 승인 요청 불가 — 서버 기기 등록 기능 미연결';
-      } catch {
-        deviceApprovalStatus.textContent = '기기 승인 요청 실패 — 보호 자료 접근 차단';
+        try {
+          await runDeviceCeremony(session, 'auth', epoch);
+        } catch (error) {
+          if (String(error.message).includes('DEVICE_NOT_REGISTERED') || String(error.message).includes('NotAllowedError') || String(error.message).includes('CHALLENGE_EXPIRED')) {
+            await runDeviceCeremony(session, 'register', epoch);
+          } else throw error;
+        }
+      } catch (error) {
+        if (epoch === approvalEpoch) deviceApprovalStatus.textContent = `기기 승인 실패: ${error.message}`;
       } finally {
-        deviceApprovalRequest.disabled = true;
+        if (epoch === approvalEpoch) deviceApprovalRequest.disabled = false;
       }
     });
     const loginForm = document.querySelector('#login-form');
@@ -188,7 +238,7 @@
     }
 
     function renderMemos(notes) {
-      if (!serverDeviceApproved) return;
+      if (!serverDeviceApproved || !deviceProof) return;
       memoForm.inert = false;
       list.hidden = false;
       if (notes.length === 0) {
@@ -246,8 +296,8 @@
 
     async function requestMemoApi(path, { method = 'GET', body, session = currentSession } = {}) {
       if (!hasSessionCredentials(session)) throw new Error('로그인이 필요합니다.');
-      if (!serverDeviceApproved) throw new Error('서버에서 기기 승인이 확인되지 않았습니다.');
-      const headers = { authorization: `Bearer ${session.access_token}` };
+      if (!serverDeviceApproved || !deviceProof) throw new Error('서버에서 기기 승인이 확인되지 않았습니다.');
+      const headers = { authorization: `Bearer ${session.access_token}`, 'x-device-proof': deviceProof };
       const options = { method, cache: 'no-store', headers };
       if (body !== undefined) {
         headers['content-type'] = 'application/json';
@@ -311,7 +361,7 @@
         resetMemoForm();
         memoStatus.textContent = '';
       }
-      if (serverDeviceApproved) void loadMemos(session);
+      // Protected content is loaded only after a verified WebAuthn assertion.
     }
 
     function errorMessage(error) {
