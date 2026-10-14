@@ -52,8 +52,8 @@
       <h2 id="app-info-heading">BYTE BACK 내 자료실 앱</h2>
       <p>이 사이트는 지원하는 브라우저에서 홈 화면에 추가할 수 있습니다. 설치만으로 기기 승인이 완료되지는 않습니다.</p>
       <p id="device-approval-status" role="status" aria-live="polite">기기 승인 상태: 확인되지 않음</p>
-      <button id="device-approval-request" type="button" disabled>기기 승인 요청</button>
-      <p>승인 요청은 권한 부여가 아닙니다. 서버의 기기 확인 기능이 준비되지 않아 현재는 자료실이 잠겨 있습니다.</p>
+      <button id="device-approval-request" type="button" disabled aria-describedby="device-approval-status">승인 요청 서비스 준비 중</button>
+      <p>현재 승인 요청을 접수하는 신뢰 가능한 서버 서비스가 연결되지 않았습니다. 설치 여부나 버튼 클릭으로 승인되지 않습니다.</p>
       <p id="connection-status" role="status" aria-live="polite">연결 상태를 확인하고 있습니다.</p>
       <p>오프라인에서는 로그인·메모 조회·변경 등 보호된 요청을 사용할 수 없습니다. 인터넷 연결 후 다시 로그인하거나 필요한 인증을 완료해 주세요.</p>
     </section>
@@ -90,7 +90,7 @@
       <p id="auth-status" role="status" aria-live="polite">로그인 기능을 준비하고 있습니다.</p>
     </section>
     <div class="notice">로그인하지 않은 방문자의 자료 요청은 거부됩니다.</div>
-    <ul id="notes" aria-live="polite"><li>로그인 후 자료를 확인할 수 있습니다.</li></ul>
+    <ul id="notes" aria-live="polite"><li>기기 승인 확인 전에는 보호 자료를 표시하지 않습니다.</li></ul>
   </main>
   <script type="module">
     const connectionStatus = document.querySelector('#connection-status');
@@ -113,7 +113,7 @@
       protectedNotes.replaceChildren(Object.assign(document.createElement('li'), {
         textContent: '기기 승인 확인 전에는 보호 자료를 표시하지 않습니다.',
       }));
-      deviceApprovalRequest.disabled = !hasSessionCredentials(session);
+      deviceApprovalRequest.disabled = true;
       deviceApprovalStatus.textContent = '기기 승인 상태: 서버 확인 대기';
       if (!hasSessionCredentials(session)) {
         deviceApprovalStatus.textContent = '기기 승인 상태: 로그인 후 요청 가능';
@@ -148,7 +148,7 @@
       } catch {
         deviceApprovalStatus.textContent = '기기 승인 요청 실패 — 보호 자료 접근 차단';
       } finally {
-        deviceApprovalRequest.disabled = !hasSessionCredentials(currentSession);
+        deviceApprovalRequest.disabled = true;
       }
     });
     const loginForm = document.querySelector('#login-form');
@@ -269,7 +269,7 @@
     async function loadMemos(session) {
       const requestId = ++memoRequestId;
       if (!hasSessionCredentials(session) || !serverDeviceApproved) {
-        showMemoMessage('로그인 후 자료를 확인할 수 있습니다.');
+        showMemoMessage('기기 승인 확인 전에는 보호 자료를 표시하지 않습니다.');
         return;
       }
 
@@ -323,7 +323,11 @@
         throw new Error('로그인 설정을 불러오지 못했습니다.');
       }
 
-      const supabase = createClient(config.url, config.publishableKey);
+      // Authentication tokens stay in memory for this tab, not localStorage.
+      // This does not establish device approval.
+      const supabase = createClient(config.url, config.publishableKey, {
+        auth: { persistSession: false, detectSessionInUrl: false },
+      });
       supabase.auth.onAuthStateChange((_event, session) => renderSession(session));
       const { data, error } = await supabase.auth.getSession();
       if (error) throw error;
